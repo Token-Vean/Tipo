@@ -1,0 +1,8 @@
+Tipo — instalación rápida
+
+Windows: ejecutar 1_INSTALAR_WINDOWS.bat
+Linux/macOS: chmod +x 1_instalar_linux_mac.sh && ./1_instalar_linux_mac.sh
+
+URL local: http://localhost:8082
+
+Tipo no consulta servicios externos, no crea puntos de acceso autorizados, no asigna materias normalizadas y no opera sobre sistemas bibliotecarios.

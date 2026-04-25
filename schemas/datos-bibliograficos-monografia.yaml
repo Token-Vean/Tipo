@@ -1,0 +1,242 @@
+norma: "MARC21 descriptivo / ISBD"
+version: "0.1-alpha"
+nombre: "Tipo — datos bibliográficos para monografías impresas modernas"
+idioma: "es"
+areas:
+  - id: identificacion
+    nombre: "Identificación"
+    elementos:
+      - id: "020$a"
+        clave: isbn
+        nombre: "ISBN"
+        tipo: lista
+        obligatorio: false
+        multiple: true
+        extraible: si
+        marc: "020 $a"
+        fuente_preferida: "verso de portada, contracubierta"
+        instruccion: >
+          Extrae únicamente ISBN visibles. No inventes ISBN. Conserva guiones si aparecen.
+          Si aparecen ISBN-10 e ISBN-13, devuelve ambos como lista.
+      - id: "041$a"
+        clave: lengua_texto
+        nombre: "Lengua del texto"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        marc: "041 $a / 008 35-37"
+        fuente_preferida: "portada, verso de portada, contenido"
+        instruccion: >
+          Indica la lengua principal del texto solo si se puede inferir con seguridad del material aportado.
+          Usa forma textual en español, por ejemplo: español, inglés, francés.
+  - id: titulo_responsabilidad
+    nombre: "Título y mención de responsabilidad"
+    elementos:
+      - id: "245$a"
+        clave: titulo_principal
+        nombre: "Título propiamente dicho"
+        tipo: texto
+        obligatorio: true
+        multiple: false
+        extraible: si
+        marc: "245 $a"
+        fuente_preferida: "portada / página de título"
+        instruccion: >
+          Extrae el título principal tal como aparece en la portada o página de título.
+          No incluyas subtítulo ni mención de responsabilidad.
+      - id: "245$b"
+        clave: subtitulo
+        nombre: "Subtítulo u otra información sobre el título"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: si
+        marc: "245 $b"
+        fuente_preferida: "portada / página de título"
+        instruccion: >
+          Extrae el subtítulo o resto del título. No repitas el título principal.
+      - id: "245$c"
+        clave: mencion_responsabilidad
+        nombre: "Mención de responsabilidad transcrita"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: si
+        marc: "245 $c"
+        fuente_preferida: "portada / página de título"
+        instruccion: >
+          Extrae la mención de responsabilidad tal como aparece. No transformes nombres en puntos de acceso.
+          No inviertas apellidos ni añadas fechas. No crees autoridades.
+  - id: edicion_publicacion
+    nombre: "Edición y publicación"
+    elementos:
+      - id: "250$a"
+        clave: mencion_edicion
+        nombre: "Mención de edición"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: si
+        marc: "250 $a"
+        fuente_preferida: "portada, verso de portada, colofón"
+        instruccion: "Extrae la mención de edición visible, por ejemplo: 2ª edición, edición revisada."
+      - id: "264$a"
+        clave: lugar_publicacion
+        nombre: "Lugar de publicación"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: si
+        marc: "264 _1 $a"
+        fuente_preferida: "portada, verso de portada, colofón"
+        instruccion: "Extrae el lugar de publicación si aparece de forma explícita."
+      - id: "264$b"
+        clave: editor
+        nombre: "Editor o editorial"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: si
+        marc: "264 _1 $b"
+        fuente_preferida: "portada, verso de portada, colofón"
+        instruccion: "Extrae el nombre del editor o editorial tal como aparece."
+      - id: "264$c"
+        clave: fecha_publicacion
+        nombre: "Fecha de publicación"
+        tipo: fecha
+        obligatorio: false
+        multiple: false
+        extraible: si
+        marc: "264 _1 $c"
+        fuente_preferida: "portada, verso de portada, colofón"
+        instruccion: "Extrae el año o fecha de publicación visible. No infieras fechas no indicadas."
+      - id: "264_4$c"
+        clave: fecha_copyright
+        nombre: "Fecha de copyright"
+        tipo: fecha
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        marc: "264 _4 $c"
+        fuente_preferida: "verso de portada"
+        instruccion: "Extrae la fecha de copyright solo si aparece explícitamente con símbolo o mención de copyright."
+  - id: descripcion_fisica
+    nombre: "Descripción física"
+    elementos:
+      - id: "300$a"
+        clave: extension
+        nombre: "Extensión"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        marc: "300 $a"
+        fuente_preferida: "observación del ejemplar / última página numerada"
+        instruccion: >
+          Propón extensión solo si se ve claramente, por ejemplo: 243 páginas.
+          Si no se puede comprobar en las imágenes, devuelve null.
+      - id: "300$b"
+        clave: ilustraciones
+        nombre: "Ilustraciones u otros detalles físicos"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        marc: "300 $b"
+        fuente_preferida: "observación del ejemplar"
+        instruccion: "Indica ilustraciones solo si se observan claramente o se menciona explícitamente."
+      - id: "300$c"
+        clave: dimensiones
+        nombre: "Dimensiones"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        marc: "300 $c"
+        fuente_preferida: "medición manual"
+        instruccion: "Normalmente no puede inferirse desde imagen; devuelve null salvo que la dimensión aparezca escrita."
+      - id: "336$a"
+        clave: tipo_contenido
+        nombre: "Tipo de contenido"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: no
+        valor_por_defecto: "texto"
+        marc: "336 $a"
+      - id: "337$a"
+        clave: tipo_medio
+        nombre: "Tipo de medio"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: no
+        valor_por_defecto: "sin mediación"
+        marc: "337 $a"
+      - id: "338$a"
+        clave: tipo_soporte
+        nombre: "Tipo de soporte"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: no
+        valor_por_defecto: "volumen"
+        marc: "338 $a"
+  - id: serie_notas
+    nombre: "Serie y notas"
+    elementos:
+      - id: "490$a"
+        clave: serie_transcrita
+        nombre: "Mención de serie transcrita"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: si
+        marc: "490 $a"
+        fuente_preferida: "portada, cubierta, verso de portada"
+        instruccion: >
+          Extrae la serie tal como aparece, sin convertirla en punto de acceso autorizado.
+          No generes campo 830.
+      - id: "500$a"
+        clave: nota_general
+        nombre: "Nota general"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        marc: "500 $a"
+        fuente_preferida: "cualquier fuente aportada"
+        instruccion: "Propón una nota breve solo si hay información visible relevante no recogida en otros campos."
+      - id: "504$a"
+        clave: nota_bibliografia
+        nombre: "Nota de bibliografía"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        marc: "504 $a"
+        fuente_preferida: "índice, página de bibliografía, contracubierta"
+        instruccion: "Indica bibliografía, índices o referencias solo si aparece explícitamente."
+      - id: "520$a"
+        clave: resumen
+        nombre: "Resumen o nota de alcance"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        marc: "520 $a"
+        fuente_preferida: "contracubierta, solapa, introducción"
+        instruccion: >
+          Resume brevemente el contenido solo si se dispone de contracubierta, solapa o texto suficiente.
+          No inventes argumento ni temática.
+      - id: "546$a"
+        clave: nota_lengua
+        nombre: "Nota de lengua"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        marc: "546 $a"
+        fuente_preferida: "portada, verso de portada, contenido"
+        instruccion: "Propón nota de lengua solo si hay información relevante, por ejemplo traducción o texto bilingüe."

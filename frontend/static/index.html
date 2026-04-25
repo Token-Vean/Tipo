@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tipo — AI Assistant for Cataloging</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><img src="/img/tipo-logo-header.png" alt="Tipo" /></div>
+    <div class="top-actions">
+      <label class="lang-control"><span data-i18n="languageLabel">Idioma</span>
+        <select id="ui-lang" aria-label="Idioma de la interfaz">
+          <option value="es">Español</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+      <span id="estado" class="status" data-i18n="statusPreparing">Preparando motor local…</span>
+      <button id="btn-apagar" class="ghost" type="button" data-i18n="shutdown">Apagar</button>
+    </div>
+  </header>
+  <main class="layout">
+    <section class="hero card">
+      <p class="eyebrow" data-i18n="eyebrow">Asistente local de precatalogación</p>
+      <h1 data-i18n="heroTitle">Extracción bibliográfica para monografías impresas</h1>
+      <p data-i18n="heroText">Suba imágenes del libro y Tipo propondrá datos descriptivos estructurados para revisión profesional. El procesamiento se realiza en local mediante Ollama.</p>
+      <div class="notice" data-i18n="notice">Tipo no consulta catálogos externos, no crea puntos de acceso autorizados, no asigna materias normalizadas y no modifica sistemas bibliotecarios.</div>
+    </section>
+    <section class="card form-card">
+      <h2 data-i18n="sourcesTitle">1. Fuentes del libro</h2>
+      <p class="muted" data-i18n="sourcesHelp">Añada portada, verso de portada, cubierta, contracubierta, lomo, colofón, índice u otras imágenes.</p>
+      <input id="ficheros" type="file" multiple accept="image/*,.pdf,.txt,.md,.docx" />
+      <div id="lista-ficheros" class="file-list"></div>
+      <div class="grid one">
+        <label><span data-i18n="modeLabel">Modo</span><select id="modo"><option value="esencial" data-i18n="modeEssential">Esencial</option><option value="completo" data-i18n="modeComplete">Completo</option></select></label>
+      </div>
+      <p class="muted small" data-i18n="languageOutputNote">La propuesta se generará en el idioma seleccionado para la interfaz.</p>
+      <button id="procesar" class="primary" type="button" data-i18n="process">Procesar conjunto</button>
+    </section>
+    <section id="resultados" class="card results hidden">
+      <div class="result-head">
+        <div><p class="eyebrow" data-i18n="reviewable">Propuesta revisable</p><h2 data-i18n="resultTitle">2. Resultado</h2></div>
+        <div class="actions"><button data-export="json" type="button">JSON</button><button data-export="csv" type="button">CSV</button><button data-export="isbd" type="button">ISBD</button><button data-export="marcxml" type="button">MARCXML</button><button id="auditoria" type="button" data-i18n="audit">Auditoría</button></div>
+      </div>
+      <div class="tabs"><button class="tab active" data-tab="campos" data-i18n="tabFields">Campos</button><button class="tab" data-tab="isbd" data-i18n="tabIsbd">Vista ISBD</button><button class="tab" data-tab="avisos" data-i18n="tabWarnings">Avisos</button></div>
+      <div id="tab-campos" class="tab-panel"></div>
+      <div id="tab-isbd" class="tab-panel hidden"><pre id="isbd-text"></pre></div>
+      <div id="tab-avisos" class="tab-panel hidden"></div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
