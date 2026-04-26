@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="Tipo.png" alt="Tipo" width="600">
+</p>
+
+
 # Tipo
 
 **Tipo** es una aplicación local de apoyo a la precatalogación de monografías impresas. A partir de imágenes o documentos facilitados por el usuario, extrae datos bibliográficos observables y propone campos descriptivos estructurados para revisión profesional.
