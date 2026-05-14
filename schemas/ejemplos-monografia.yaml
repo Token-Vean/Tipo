@@ -1,0 +1,318 @@
+# Ejemplos resueltos para el extractor de Tipo (few-shot)
+# ---------------------------------------------------------------------------
+# Cómo funciona:
+#   El extractor (backend/app/extractor.py) carga este fichero al construir el
+#   prompt e inyecta los primeros MAX_EJEMPLOS_PROMPT ejemplos como
+#   demostraciones de extracción correcta. Si el fichero no existe, Tipo
+#   funciona igual, solo que sin few-shot.
+#
+# Cómo se empaqueta "internamente" con la herramienta:
+#   Este YAML se copia dentro de la imagen, en /app/schemas/, junto al esquema.
+#   No se descarga nada en tiempo de ejecución: los ejemplos viajan con Tipo,
+#   coherente con su filosofía local-first y sin dependencia de red.
+#
+# Sobre el origen de los ejemplos:
+#   Son casos SINTÉTICOS construidos a mano siguiendo las convenciones de
+#   descripción de la BNE y de ISBD (formato del depósito legal con sigla
+#   provincial, ISBN-13 con guiones, transcripción literal de la mención de
+#   responsabilidad, prioridad de portada sobre verso). NO reproducen ningún
+#   registro concreto de la BNE: ilustran el método, no copian catálogo.
+#   Para regenerarlos o ampliarlos a partir de registros reales, ver
+#   examples/construir_ejemplos_bne.py.
+#
+# Estructura de cada ejemplo:
+#   descripcion : qué caso difícil ilustra (no se envía como dato, orienta)
+#   texto       : material simulado, con las cabeceras de zona reales de Tipo
+#   salida      : JSON exactamente con la forma que Tipo espera del modelo
+
+ejemplos:
+
+  - descripcion: >
+      Traducción. El traductor NO es autor principal; el idioma del texto es el
+      de esta edición (español), no el original (alemán). El "título original"
+      del verso no es el título principal.
+    texto: |
+      ########## ZONA: PRELIMINARES (cubierta, portada, verso de portada, índice) ##########
+
+      ===== preliminares · página 3 de 248 =====
+      LA CASA DEL ACANTILADO
+      Greta Hoffmann
+      traducción de Marta Ruiz Campos
+      Ediciones Marea
+      Barcelona
+
+      ===== preliminares · página 4 de 248 =====
+      Título original: Das Haus an der Klippe
+      © 2019, Greta Hoffmann
+      © 2021 de la traducción: Marta Ruiz Campos
+      © 2021, Ediciones Marea, S. L.
+      Primera edición: marzo de 2021
+      ISBN: 978-84-18147-22-9
+      Depósito legal: B 4521-2021
+      Impreso en España
+    salida:
+      campos:
+        isbn:
+          valor: ["978-84-18147-22-9"]
+          confianza: "alta"
+          evidencia: "ISBN: 978-84-18147-22-9"
+          zona: "preliminares · página 4"
+        deposito_legal:
+          valor: "B 4521-2021"
+          confianza: "alta"
+          evidencia: "Depósito legal: B 4521-2021"
+          zona: "preliminares · página 4"
+        lengua_texto:
+          valor: "español"
+          confianza: "media"
+          evidencia: "© 2021 de la traducción: Marta Ruiz Campos"
+          zona: "preliminares · página 4"
+        idioma_original:
+          valor: "alemán"
+          confianza: "alta"
+          evidencia: "Título original: Das Haus an der Klippe"
+          zona: "preliminares · página 4"
+        titulo_principal:
+          valor: "La casa del acantilado"
+          confianza: "alta"
+          evidencia: "LA CASA DEL ACANTILADO"
+          zona: "preliminares · página 3"
+        subtitulo:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        mencion_responsabilidad:
+          valor: "Greta Hoffmann ; traducción de Marta Ruiz Campos"
+          confianza: "alta"
+          evidencia: "Greta Hoffmann / traducción de Marta Ruiz Campos"
+          zona: "preliminares · página 3"
+        titulo_original:
+          valor: "Das Haus an der Klippe"
+          confianza: "alta"
+          evidencia: "Título original: Das Haus an der Klippe"
+          zona: "preliminares · página 4"
+        mencion_edicion:
+          valor: "Primera edición"
+          confianza: "alta"
+          evidencia: "Primera edición: marzo de 2021"
+          zona: "preliminares · página 4"
+        lugar_publicacion:
+          valor: "Barcelona"
+          confianza: "alta"
+          evidencia: "Ediciones Marea / Barcelona"
+          zona: "preliminares · página 3"
+        editor:
+          valor: "Ediciones Marea"
+          confianza: "alta"
+          evidencia: "Ediciones Marea, S. L."
+          zona: "preliminares · página 4"
+        fecha_publicacion:
+          valor: "2021"
+          confianza: "alta"
+          evidencia: "Primera edición: marzo de 2021"
+          zona: "preliminares · página 4"
+        fecha_copyright:
+          valor: "2021"
+          confianza: "media"
+          evidencia: "© 2021, Ediciones Marea, S. L."
+          zona: "preliminares · página 4"
+        nota_lengua:
+          valor: "Traducción del alemán"
+          confianza: "alta"
+          evidencia: "Título original: Das Haus an der Klippe"
+          zona: "preliminares · página 4"
+
+  - descripcion: >
+      Varios responsables en portada con roles distintos. Solo el autor de la
+      obra va como tal; coordinador, prologuista e ilustradora son
+      responsabilidad secundaria y se transcriben literalmente, no se
+      reclasifican. Sin ISBN visible en el material aportado: campo a null.
+    texto: |
+      ########## ZONA: PRELIMINARES (cubierta, portada, verso de portada, índice) ##########
+
+      ===== preliminares · página 1 de 192 =====
+      CUADERNOS DEL DUERO
+      Memoria de un río
+      Julián Aceves
+      edición de Pilar Notario
+      prólogo de Eduardo Sanz
+      ilustraciones de Clara Vidal
+      Soria : Editorial Páramo, 2018
+
+      ===== preliminares · página 2 de 192 =====
+      © Julián Aceves, 2018
+      © de esta edición: Editorial Páramo
+      Colección Cuadernos del Duero, 7
+      Depósito legal: SO 88-2018
+    salida:
+      campos:
+        isbn:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        deposito_legal:
+          valor: "SO 88-2018"
+          confianza: "alta"
+          evidencia: "Depósito legal: SO 88-2018"
+          zona: "preliminares · página 2"
+        lengua_texto:
+          valor: "español"
+          confianza: "media"
+          evidencia: "Soria : Editorial Páramo, 2018"
+          zona: "preliminares · página 1"
+        idioma_original:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        titulo_principal:
+          valor: "Memoria de un río"
+          confianza: "alta"
+          evidencia: "Memoria de un río"
+          zona: "preliminares · página 1"
+        subtitulo:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        mencion_responsabilidad:
+          valor: "Julián Aceves ; edición de Pilar Notario ; prólogo de Eduardo Sanz ; ilustraciones de Clara Vidal"
+          confianza: "alta"
+          evidencia: "Julián Aceves / edición de Pilar Notario / prólogo de Eduardo Sanz / ilustraciones de Clara Vidal"
+          zona: "preliminares · página 1"
+        titulo_original:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        mencion_edicion:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        lugar_publicacion:
+          valor: "Soria"
+          confianza: "alta"
+          evidencia: "Soria : Editorial Páramo, 2018"
+          zona: "preliminares · página 1"
+        editor:
+          valor: "Editorial Páramo"
+          confianza: "alta"
+          evidencia: "Soria : Editorial Páramo, 2018"
+          zona: "preliminares · página 1"
+        fecha_publicacion:
+          valor: "2018"
+          confianza: "alta"
+          evidencia: "Soria : Editorial Páramo, 2018"
+          zona: "preliminares · página 1"
+        fecha_copyright:
+          valor: "2018"
+          confianza: "media"
+          evidencia: "© Julián Aceves, 2018"
+          zona: "preliminares · página 2"
+        serie_transcrita:
+          valor: "Colección Cuadernos del Duero, 7"
+          confianza: "alta"
+          evidencia: "Colección Cuadernos del Duero, 7"
+          zona: "preliminares · página 2"
+
+  - descripcion: >
+      "Esperado pero no encontrado": se aporta portada y verso, pero no consta
+      ni mención de edición ni depósito legal. Esos campos van a null con
+      confianza null; no se rellenan por inferencia. El dato de una solapa
+      publicitaria no se usa como dato principal.
+    texto: |
+      ########## ZONA: PRELIMINARES (cubierta, portada, verso de portada, índice) ##########
+
+      ===== preliminares · página 5 de 320 =====
+      EL JARDÍN INTERMITENTE
+      Lucía Ferrán
+      Madrid
+      Editorial Lumbre
+
+      ===== preliminares · página 6 de 320 =====
+      © Lucía Ferrán, 2020
+      © Editorial Lumbre, 2020
+      ISBN 978-84-9000-111-4
+      Reservados todos los derechos
+
+      ########## ZONA: FINALES (colofón, depósito legal, datos de impresión) ##########
+
+      ===== finales · página 318 de 320 =====
+      De próxima aparición en esta editorial:
+      "La estación de las grullas", de Lucía Ferrán
+      Premio Nacional de Narrativa
+    salida:
+      campos:
+        isbn:
+          valor: ["978-84-9000-111-4"]
+          confianza: "alta"
+          evidencia: "ISBN 978-84-9000-111-4"
+          zona: "preliminares · página 6"
+        deposito_legal:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        lengua_texto:
+          valor: "español"
+          confianza: "media"
+          evidencia: "Madrid / Editorial Lumbre"
+          zona: "preliminares · página 5"
+        idioma_original:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        titulo_principal:
+          valor: "El jardín intermitente"
+          confianza: "alta"
+          evidencia: "EL JARDÍN INTERMITENTE"
+          zona: "preliminares · página 5"
+        subtitulo:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        mencion_responsabilidad:
+          valor: "Lucía Ferrán"
+          confianza: "alta"
+          evidencia: "Lucía Ferrán"
+          zona: "preliminares · página 5"
+        titulo_original:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        mencion_edicion:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        lugar_publicacion:
+          valor: "Madrid"
+          confianza: "alta"
+          evidencia: "Madrid"
+          zona: "preliminares · página 5"
+        editor:
+          valor: "Editorial Lumbre"
+          confianza: "alta"
+          evidencia: "Editorial Lumbre"
+          zona: "preliminares · página 5"
+        fecha_publicacion:
+          valor: "2020"
+          confianza: "media"
+          evidencia: "© Editorial Lumbre, 2020"
+          zona: "preliminares · página 6"
+        fecha_copyright:
+          valor: "2020"
+          confianza: "alta"
+          evidencia: "© Lucía Ferrán, 2020"
+          zona: "preliminares · página 6"
+        nota_general:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null

@@ -1,7 +1,6 @@
 let csrfToken = null;
 let ultimoResultado = null;
 let currentLang = 'es';
-const etiquetasSugeridas = ['portada', 'verso de portada', 'cubierta', 'contracubierta', 'lomo', 'colofón', 'índice', 'bibliografía', 'otra'];
 
 const I18N = {
   es: {
@@ -15,15 +14,15 @@ const I18N = {
     shutdownError: 'No se pudo solicitar el apagado. Use el script 2_DETENER si el servicio sigue activo.',
     eyebrow: 'Asistente local de precatalogación',
     heroTitle: 'Extracción bibliográfica para monografías impresas',
-    heroText: 'Suba imágenes del libro y Tipo propondrá datos descriptivos estructurados para revisión profesional. El procesamiento se realiza en local mediante Ollama.',
+    heroText: 'Suba el libro completo (PDF, imágenes o documento) y Tipo localizará por sí mismo las zonas donde se encuentran los datos descriptivos para proponer una descripción estructurada revisable. El procesamiento se realiza en local mediante Ollama.',
     notice: 'Tipo no consulta catálogos externos, no crea puntos de acceso autorizados, no asigna materias normalizadas y no modifica sistemas bibliotecarios.',
-    sourcesTitle: '1. Fuentes del libro',
-    sourcesHelp: 'Añada portada, verso de portada, cubierta, contracubierta, lomo, colofón, índice u otras imágenes.',
+    sourcesTitle: '1. El libro',
+    sourcesHelp: 'Suba el libro completo. No hace falta separar portada, verso o colofón: Tipo localiza internamente las zonas donde suele estar la información (preliminares y finales) y descarta el cuerpo. También puede subir imágenes sueltas de páginas concretas si lo prefiere.',
     modeLabel: 'Modo',
     modeEssential: 'Esencial',
     modeComplete: 'Completo',
     languageOutputNote: 'La propuesta se generará en el idioma seleccionado para la interfaz.',
-    process: 'Procesar conjunto',
+    process: 'Procesar',
     processing: 'Procesando…',
     reviewable: 'Propuesta revisable',
     resultTitle: '2. Resultado',
@@ -31,10 +30,21 @@ const I18N = {
     tabFields: 'Campos',
     tabIsbd: 'Vista ISBD',
     tabWarnings: 'Avisos',
-    noFiles: 'Sube al menos una imagen o documento.',
+    tabCoverage: 'Cobertura',
+    noFiles: 'Suba al menos un fichero del libro.',
     noIsbd: 'Sin datos suficientes para generar vista ISBD.',
     evidence: 'Evidencia',
-    noWarnings: 'Sin advertencias.'
+    zone: 'Zona',
+    noWarnings: 'Sin advertencias.',
+    coverageTitle: 'Zonas analizadas',
+    coverageIntro: 'Tipo no procesa el libro entero: analiza solo las zonas donde se concentran los datos descriptivos.',
+    coveragePagesTotal: 'Páginas del documento',
+    coveragePagesAnalyzed: 'Páginas analizadas',
+    coveragePagesDiscarded: 'Páginas descartadas',
+    coveragePreliminares: 'Preliminares',
+    coverageFinales: 'Finales',
+    coverageRoute: 'Ruta de procesamiento',
+    coverageNone: 'No se registró segmentación por zonas (por ejemplo, una imagen suelta).'
   },
   en: {
     languageLabel: 'Language',
@@ -47,15 +57,15 @@ const I18N = {
     shutdownError: 'Could not request shutdown. Use the 2_STOP script if the service is still active.',
     eyebrow: 'Local pre-cataloging assistant',
     heroTitle: 'Bibliographic extraction for printed monographs',
-    heroText: 'Upload images of the book and Tipo will propose structured descriptive data for professional review. Processing is performed locally with Ollama.',
+    heroText: 'Upload the whole book (PDF, images or document) and Tipo will locate the zones where descriptive data usually appears, proposing a structured, reviewable description. Processing runs locally with Ollama.',
     notice: 'Tipo does not query external catalogues, does not create authorized access points, does not assign controlled subjects, and does not modify library systems.',
-    sourcesTitle: '1. Book sources',
-    sourcesHelp: 'Add title page, verso of title page, cover, back cover, spine, colophon, table of contents or other images.',
+    sourcesTitle: '1. The book',
+    sourcesHelp: 'Upload the whole book. There is no need to separate title page, verso or colophon: Tipo internally locates the zones where the information usually is (front matter and end matter) and discards the body. You may also upload single images of specific pages if you prefer.',
     modeLabel: 'Mode',
     modeEssential: 'Essential',
     modeComplete: 'Complete',
     languageOutputNote: 'The proposal will be generated in the selected interface language.',
-    process: 'Process set',
+    process: 'Process',
     processing: 'Processing…',
     reviewable: 'Reviewable proposal',
     resultTitle: '2. Result',
@@ -63,19 +73,33 @@ const I18N = {
     tabFields: 'Fields',
     tabIsbd: 'ISBD view',
     tabWarnings: 'Warnings',
-    noFiles: 'Upload at least one image or document.',
+    tabCoverage: 'Coverage',
+    noFiles: 'Upload at least one file of the book.',
     noIsbd: 'Not enough data to generate the ISBD view.',
     evidence: 'Evidence',
-    noWarnings: 'No warnings.'
+    zone: 'Zone',
+    noWarnings: 'No warnings.',
+    coverageTitle: 'Analyzed zones',
+    coverageIntro: 'Tipo does not process the whole book: it analyzes only the zones where descriptive data is concentrated.',
+    coveragePagesTotal: 'Document pages',
+    coveragePagesAnalyzed: 'Analyzed pages',
+    coveragePagesDiscarded: 'Discarded pages',
+    coveragePreliminares: 'Front matter',
+    coverageFinales: 'End matter',
+    coverageRoute: 'Processing route',
+    coverageNone: 'No zone segmentation was recorded (for example, a single image).'
   }
 };
 
 const FIELD_NAMES_EN = {
   isbn: 'ISBN',
-  lengua_texto: 'Language of text',
+  deposito_legal: 'Legal deposit',
+  lengua_texto: 'Language of text of this edition',
+  idioma_original: 'Original language of the work',
   titulo_principal: 'Title proper',
   subtitulo: 'Subtitle or other title information',
   mencion_responsabilidad: 'Transcribed statement of responsibility',
+  titulo_original: 'Original title of the work',
   mencion_edicion: 'Edition statement',
   lugar_publicacion: 'Place of publication',
   editor: 'Publisher',
@@ -140,24 +164,16 @@ async function comprobarEstado() {
   }
 }
 
+// Lista de ficheros: solo informativa. Ya no se etiqueta cada fichero a mano;
+// Tipo localiza internamente las zonas del libro.
 function renderListaFicheros() {
   const files = Array.from($('#ficheros').files || []);
   const cont = $('#lista-ficheros');
   cont.innerHTML = '';
-  files.forEach((file, idx) => {
+  files.forEach((file) => {
     const row = document.createElement('div');
     row.className = 'file-row';
     row.innerHTML = `<div><div class="file-name">${escapeHtml(file.name)}</div><div class="field-meta">${Math.round(file.size / 1024)} KB</div></div>`;
-    const select = document.createElement('select');
-    select.className = 'etiqueta';
-    etiquetasSugeridas.forEach(e => {
-      const o = document.createElement('option');
-      o.value = e;
-      o.textContent = e;
-      if (idx < etiquetasSugeridas.length && e === etiquetasSugeridas[idx]) o.selected = true;
-      select.appendChild(o);
-    });
-    row.appendChild(select);
     cont.appendChild(row);
   });
 }
@@ -169,8 +185,7 @@ async function procesar() {
   $('#procesar').textContent = t('processing');
   const fd = new FormData();
   files.forEach(f => fd.append('ficheros', f));
-  const etiquetas = $$('.etiqueta').map(x => x.value);
-  fd.append('etiquetas', JSON.stringify(etiquetas));
+  // Ya no se envían etiquetas por fichero: el backend segmenta por zonas.
   fd.append('norma', 'marc21-monografias');
   fd.append('modo', $('#modo').value);
   fd.append('idioma_salida', currentLang);
@@ -206,6 +221,7 @@ function renderResultado() {
       <div>
         <textarea data-idx="${i}">${escapeHtml(valorTexto(c.valor))}</textarea>
         <div class="field-meta">${escapeHtml(t('evidence'))}: ${escapeHtml(c.evidencia || '—')}</div>
+        ${c.zona ? `<div class="field-meta">${escapeHtml(t('zone'))}: ${escapeHtml(c.zona)}</div>` : ''}
       </div>
       <div class="badge">${escapeHtml(c.confianza || 'sin valor')}<br>${escapeHtml(c.estado_evidencia || '')}</div>
     </div>`).join('');
@@ -213,7 +229,39 @@ function renderResultado() {
   $('#isbd-text').textContent = ultimoResultado.isbd || t('noIsbd');
   const avisos = ultimoResultado.propuesta.advertencias || [];
   $('#tab-avisos').innerHTML = avisos.length ? avisos.map(a => `<div class="warn">${escapeHtml(a)}</div>`).join('') : `<p class="muted">${escapeHtml(t('noWarnings'))}</p>`;
+  renderCobertura();
   activarTab('campos');
+}
+
+function renderCobertura() {
+  const cont = $('#tab-cobertura');
+  const cobertura = (ultimoResultado.documento && ultimoResultado.documento.cobertura_zonas) || [];
+  const conDatos = cobertura.filter(c => c && c.estrategia === 'zonas');
+  if (!conDatos.length) {
+    cont.innerHTML = `<p class="muted">${escapeHtml(t('coverageNone'))}</p>`;
+    return;
+  }
+  let html = `<p class="muted small">${escapeHtml(t('coverageIntro'))}</p>`;
+  conDatos.forEach(c => {
+    const prelim = Array.isArray(c.preliminares) ? c.preliminares.join(', ') : '—';
+    const finales = Array.isArray(c.finales) && c.finales.length ? c.finales.join(', ') : '—';
+    html += `
+      <div class="field">
+        <div>
+          <div class="field-name">${escapeHtml(c.archivo || c.etiqueta || '—')}</div>
+          <div class="field-meta">${escapeHtml(t('coverageRoute'))}: ${escapeHtml(c.ruta || '—')}</div>
+        </div>
+        <div>
+          <div class="field-meta">${escapeHtml(t('coveragePagesTotal'))}: ${escapeHtml(String(c.paginas_totales ?? '—'))}</div>
+          <div class="field-meta">${escapeHtml(t('coveragePagesAnalyzed'))}: ${escapeHtml(String(c.paginas_analizadas ?? '—'))}</div>
+          <div class="field-meta">${escapeHtml(t('coveragePagesDiscarded'))}: ${escapeHtml(String(c.paginas_descartadas ?? '—'))}</div>
+          <div class="field-meta">${escapeHtml(t('coveragePreliminares'))}: ${escapeHtml(prelim)}</div>
+          <div class="field-meta">${escapeHtml(t('coverageFinales'))}: ${escapeHtml(finales)}</div>
+        </div>
+        <div class="badge">${escapeHtml(String(c.paginas_analizadas ?? '—'))}/${escapeHtml(String(c.paginas_totales ?? '—'))}</div>
+      </div>`;
+  });
+  cont.innerHTML = html;
 }
 
 function nombreCampo(c) {
@@ -229,7 +277,7 @@ function actualizarCampo(ev) {
 
 function activarTab(nombre) {
   $$('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === nombre));
-  ['campos', 'isbd', 'avisos'].forEach(tab => $('#tab-' + tab).classList.toggle('hidden', tab !== nombre));
+  ['campos', 'isbd', 'avisos', 'cobertura'].forEach(tab => $('#tab-' + tab).classList.toggle('hidden', tab !== nombre));
 }
 
 async function exportar(formato) {

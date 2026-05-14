@@ -52,6 +52,62 @@ def _estado_evidencia(campo: Any) -> str:
     return "sin_evidencia"
 
 
+def _resumen_cobertura(documento: Any) -> dict[str, Any]:
+    """
+    Resume qué se analizó realmente frente al documento completo. Tipo segmenta
+    por zonas: sube el libro entero pero solo procesa preliminares y finales.
+    Esta sección deja constancia de ello en la ficha técnica, sin incluir texto
+    bibliográfico.
+    """
+    coberturas = list(getattr(documento, "cobertura", []) or [])
+    if not coberturas:
+        return {
+            "estrategia": "no_registrada",
+            "nota": "No se registró segmentación por zonas para este conjunto.",
+        }
+
+    por_archivo: list[dict[str, Any]] = []
+    paginas_totales = 0
+    paginas_analizadas = 0
+    for cob in coberturas:
+        if not isinstance(cob, dict):
+            continue
+        pt = cob.get("paginas_totales")
+        pa = cob.get("paginas_analizadas")
+        if isinstance(pt, int):
+            paginas_totales += pt
+        if isinstance(pa, int):
+            paginas_analizadas += pa
+        por_archivo.append({
+            "etiqueta": cob.get("etiqueta"),
+            "archivo": cob.get("archivo"),
+            "estrategia": cob.get("estrategia"),
+            "ruta": cob.get("ruta"),
+            "paginas_totales": pt,
+            "paginas_analizadas": pa,
+            "paginas_descartadas": cob.get("paginas_descartadas"),
+            "preliminares": cob.get("preliminares"),
+            "finales": cob.get("finales"),
+            "paginas_rasterizadas": cob.get("paginas_rasterizadas"),
+            "calidad_ocr_zonas": cob.get("calidad_ocr_zonas"),
+        })
+
+    return {
+        "estrategia": "zonas",
+        "descripcion": (
+            "Se admite el libro completo; solo se analizan las zonas "
+            "descriptivas (preliminares y finales) y se descarta el cuerpo."
+        ),
+        "paginas_totales": paginas_totales or None,
+        "paginas_analizadas": paginas_analizadas or None,
+        "paginas_descartadas": (
+            (paginas_totales - paginas_analizadas)
+            if paginas_totales and paginas_analizadas is not None else None
+        ),
+        "por_archivo": por_archivo,
+    }
+
+
 def generar_ficha_tecnica(
     *,
     peticion_id: str,
@@ -120,10 +176,11 @@ def generar_ficha_tecnica(
         "limites_aplicados": {
             "tamano_maximo_fichero_bytes": router_entrada.TAMANO_MAXIMO_BYTES,
             "paginas_maximas_pdf": router_entrada.PAGINAS_MAXIMAS_PDF,
-            "paginas_pdf_vision_max": router_entrada.PAGINAS_PDF_VISION_MAX,
+            "umbral_calidad_ocr": router_entrada.UMBRAL_CALIDAD_OCR,
             "longitud_maxima_texto_extraido": router_entrada.LONGITUD_MAXIMA_TEXTO,
             "pixeles_maximos_imagen": router_entrada.PIXELS_MAXIMOS_IMAGEN,
         },
+        "cobertura_zonas": _resumen_cobertura(documento),
         "control_evidencia": {
             "campos_totales": len(campos),
             "campos_con_valor": con_valor,

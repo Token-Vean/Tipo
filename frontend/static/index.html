@@ -24,28 +24,29 @@
     <section class="hero card">
       <p class="eyebrow" data-i18n="eyebrow">Asistente local de precatalogación</p>
       <h1 data-i18n="heroTitle">Extracción bibliográfica para monografías impresas</h1>
-      <p data-i18n="heroText">Suba imágenes del libro y Tipo propondrá datos descriptivos estructurados para revisión profesional. El procesamiento se realiza en local mediante Ollama.</p>
+      <p data-i18n="heroText">Suba el libro completo (PDF, imágenes o documento) y Tipo localizará por sí mismo las zonas donde se encuentran los datos descriptivos para proponer una descripción estructurada revisable. El procesamiento se realiza en local mediante Ollama.</p>
       <div class="notice" data-i18n="notice">Tipo no consulta catálogos externos, no crea puntos de acceso autorizados, no asigna materias normalizadas y no modifica sistemas bibliotecarios.</div>
     </section>
     <section class="card form-card">
-      <h2 data-i18n="sourcesTitle">1. Fuentes del libro</h2>
-      <p class="muted" data-i18n="sourcesHelp">Añada portada, verso de portada, cubierta, contracubierta, lomo, colofón, índice u otras imágenes.</p>
+      <h2 data-i18n="sourcesTitle">1. El libro</h2>
+      <p class="muted" data-i18n="sourcesHelp">Suba el libro completo. No hace falta separar portada, verso o colofón: Tipo localiza internamente las zonas donde suele estar la información (preliminares y finales) y descarta el cuerpo. También puede subir imágenes sueltas de páginas concretas si lo prefiere.</p>
       <input id="ficheros" type="file" multiple accept="image/*,.pdf,.txt,.md,.docx" />
       <div id="lista-ficheros" class="file-list"></div>
       <div class="grid one">
         <label><span data-i18n="modeLabel">Modo</span><select id="modo"><option value="esencial" data-i18n="modeEssential">Esencial</option><option value="completo" data-i18n="modeComplete">Completo</option></select></label>
       </div>
       <p class="muted small" data-i18n="languageOutputNote">La propuesta se generará en el idioma seleccionado para la interfaz.</p>
-      <button id="procesar" class="primary" type="button" data-i18n="process">Procesar conjunto</button>
+      <button id="procesar" class="primary" type="button" data-i18n="process">Procesar</button>
     </section>
     <section id="resultados" class="card results hidden">
       <div class="result-head">
         <div><p class="eyebrow" data-i18n="reviewable">Propuesta revisable</p><h2 data-i18n="resultTitle">2. Resultado</h2></div>
         <div class="actions"><button data-export="json" type="button">JSON</button><button data-export="csv" type="button">CSV</button><button data-export="isbd" type="button">ISBD</button><button data-export="marcxml" type="button">MARCXML</button><button id="auditoria" type="button" data-i18n="audit">Auditoría</button></div>
       </div>
-      <div class="tabs"><button class="tab active" data-tab="campos" data-i18n="tabFields">Campos</button><button class="tab" data-tab="isbd" data-i18n="tabIsbd">Vista ISBD</button><button class="tab" data-tab="avisos" data-i18n="tabWarnings">Avisos</button></div>
+      <div class="tabs"><button class="tab active" data-tab="campos" data-i18n="tabFields">Campos</button><button class="tab" data-tab="isbd" data-i18n="tabIsbd">Vista ISBD</button><button class="tab" data-tab="cobertura" data-i18n="tabCoverage">Cobertura</button><button class="tab" data-tab="avisos" data-i18n="tabWarnings">Avisos</button></div>
       <div id="tab-campos" class="tab-panel"></div>
       <div id="tab-isbd" class="tab-panel hidden"><pre id="isbd-text"></pre></div>
+      <div id="tab-cobertura" class="tab-panel hidden"></div>
       <div id="tab-avisos" class="tab-panel hidden"></div>
     </section>
   </main>

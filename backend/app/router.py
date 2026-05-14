@@ -1,13 +1,19 @@
 """
-Router de entrada: validación de seguridad y decisión de ruta.
+Router de entrada: validación de seguridad, segmentación por zonas y decisión
+de ruta.
 
 Para cada fichero subido:
     1. Valida tamaño, tipo MIME real por firma/contenido, no por extensión.
     2. Rechaza ficheros sospechosos o no admitidos.
     3. Extrae texto cuando hay capa textual útil.
-    4. Convierte a imágenes cuando el documento solo tiene imagen o el
-       texto disponible es de baja calidad.
-    5. Devuelve una Entrada lista para el extractor.
+    4. SEGMENTA POR ZONAS: en lugar de enviar el documento completo al modelo,
+       localiza las zonas donde se concentran los datos descriptivos
+       (preliminares y finales) y descarta el cuerpo. Esto permite subir el
+       libro entero sin recortar partes a mano (ver app/zonas.py).
+    5. Convierte a imágenes las páginas de esas zonas, siempre que se pueda,
+       de modo que la portada y el colofón lleguen al modelo de visión aunque
+       el libro tenga cientos de páginas.
+    6. Devuelve una Entrada lista para el extractor, con cobertura registrada.
 
 Este módulo es la primera línea de defensa. Debe ser estricto: cualquier
 formato ambiguo se rechaza en lugar de enviarlo al parser documental.
@@ -22,9 +28,10 @@ import os
 import re
 import warnings
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
+from . import zonas
 from .extractor import Entrada
 from .parser_sandbox import SandboxExecutionError, ejecutar_en_sandbox, sandbox_activo
 
@@ -35,11 +42,16 @@ logger = logging.getLogger(__name__)
 # Límites de seguridad
 # =============================================================================
 
-TAMANO_MAXIMO_BYTES = 50 * 1024 * 1024      # 50 MB de fichero documental
-PAGINAS_MAXIMAS_PDF = 200
-PAGINAS_PDF_HIBRIDO = 5
-PAGINAS_PDF_VISION_MAX = 20
+TAMANO_MAXIMO_BYTES = int(os.getenv("MAX_TAMANO_FICHERO_BYTES", str(80 * 1024 * 1024)))
+
+# Con segmentación por zonas ya no se procesa el volumen completo: el texto se
+# recorta a las zonas y solo se rasterizan ~14 páginas. Por eso el tope de
+# páginas puede ser alto: el coste real depende de las zonas, no del total.
+PAGINAS_MAXIMAS_PDF = int(os.getenv("PAGINAS_MAXIMAS_PDF", "1200"))
 LONGITUD_MAXIMA_TEXTO = int(os.getenv("MAX_LONGITUD_TEXTO_EXTRAIDO", "800000"))
+
+# Umbral de calidad OCR por debajo del cual se usa ruta visión en vez de texto.
+UMBRAL_CALIDAD_OCR = float(os.getenv("UMBRAL_CALIDAD_OCR", "0.5"))
 
 # Imagen de entrada. 40 MP evita bombas razonables sin impedir escaneos
 # administrativos grandes. La dimensión máxima reduce cargas patológicas.
@@ -51,7 +63,7 @@ BYTES_MAXIMOS_IMAGEN_NORMALIZADA = 12 * 1024 * 1024
 ESCALA_RENDER_PDF = 2.0
 PIXELS_MAXIMOS_PAGINA_PDF = 35_000_000
 BYTES_MAXIMOS_IMAGEN_PDF = 12 * 1024 * 1024
-BYTES_MAXIMOS_TOTAL_IMAGENES = 80 * 1024 * 1024
+BYTES_MAXIMOS_TOTAL_IMAGENES = 120 * 1024 * 1024
 
 # DOCX/ZIP. Límites deliberadamente conservadores para evitar zip bombs.
 DOCX_MAX_ENTRADAS = 500
@@ -94,6 +106,9 @@ class DocumentoProcesado:
     tipo_mime: str
     tamano_bytes: int
     paginas: int | None
+    # Cobertura: qué se analizó realmente frente al documento completo.
+    # Lo consume la ficha técnica de auditoría.
+    cobertura: dict = field(default_factory=dict)
 
 
 # =============================================================================
@@ -188,8 +203,6 @@ def _validar_docx_seguro(contenido: bytes) -> None:
     for info in infos:
         nombre = info.filename.replace("\\", "/")
 
-        # Rutas internas anómalas. No extraemos el ZIP, pero las rechazamos
-        # para evitar ambigüedades y futuras regresiones si se añade extracción.
         if nombre.startswith("/") or ".." in nombre.split("/"):
             raise ErrorValidacion("El DOCX contiene rutas internas no seguras.")
 
@@ -241,8 +254,6 @@ def _parece_texto(contenido: bytes) -> bool:
         return False
 
     if muestra.startswith((b"\xff\xfe", b"\xfe\xff")):
-        # TXT UTF-16 no se soporta en esta versión para mantener simple la
-        # puerta de entrada y evitar confusiones con binarios con muchos nulos.
         return False
 
     for encoding in ("utf-8", "cp1252", "latin-1"):
@@ -311,8 +322,12 @@ def _calidad_ocr(texto: str, num_paginas: int) -> float:
 # Extracción por tipo
 # =============================================================================
 
-def _extraer_texto_pdf(contenido: bytes) -> tuple[str, int]:
-    """Extrae texto de un PDF. Devuelve (texto, num_paginas)."""
+def _extraer_texto_pdf_por_pagina(contenido: bytes) -> list[str]:
+    """
+    Extrae el texto de un PDF página a página. Devuelve una lista paralela al
+    índice de página; esto es lo que necesita la segmentación por zonas para
+    saber qué texto pertenece a preliminares y qué a finales.
+    """
     import pypdf
 
     try:
@@ -332,18 +347,22 @@ def _extraer_texto_pdf(contenido: bytes) -> tuple[str, int]:
             f"{PAGINAS_MAXIMAS_PDF}. Divida el documento en piezas más pequeñas."
         )
 
-    partes = []
+    paginas: list[str] = []
     for pagina in lector.pages:
         try:
-            partes.append(pagina.extract_text() or "")
+            paginas.append(pagina.extract_text() or "")
         except Exception as e:
             logger.warning("Error extrayendo texto de una página: %s", e)
-            partes.append("")
+            paginas.append("")
+    return paginas
 
-    return "\n\n".join(partes).strip(), num_paginas
 
-
-def _pdf_a_imagenes(contenido: bytes, max_paginas: int = PAGINAS_PDF_VISION_MAX) -> list[bytes]:
+def _pdf_paginas_a_imagenes(contenido: bytes, indices: list[int]) -> list[bytes]:
+    """
+    Rasteriza únicamente las páginas indicadas (por índice 0-based). A
+    diferencia de un render secuencial, esto permite incluir el colofón
+    (al final del volumen) sin renderizar todo lo que hay en medio.
+    """
     import pypdfium2 as pdfium
 
     imagenes: list[bytes] = []
@@ -355,8 +374,10 @@ def _pdf_a_imagenes(contenido: bytes, max_paginas: int = PAGINAS_PDF_VISION_MAX)
         raise ErrorValidacion(f"El PDF no se puede abrir para renderizado: {e}") from None
 
     try:
-        paginas_a_procesar = min(len(pdf), max_paginas)
-        for i in range(paginas_a_procesar):
+        n = len(pdf)
+        for i in indices:
+            if i < 0 or i >= n:
+                continue
             pagina = pdf[i]
             try:
                 ancho_pt, alto_pt = pagina.get_size()
@@ -364,7 +385,9 @@ def _pdf_a_imagenes(contenido: bytes, max_paginas: int = PAGINAS_PDF_VISION_MAX)
                 ancho_pt, alto_pt = (0, 0)
 
             if ancho_pt and alto_pt:
-                pixeles_estimados = int(ancho_pt * ESCALA_RENDER_PDF) * int(alto_pt * ESCALA_RENDER_PDF)
+                pixeles_estimados = (
+                    int(ancho_pt * ESCALA_RENDER_PDF) * int(alto_pt * ESCALA_RENDER_PDF)
+                )
                 if pixeles_estimados > PIXELS_MAXIMOS_PAGINA_PDF:
                     raise ErrorValidacion(
                         f"La página {i + 1} del PDF es demasiado grande para renderizar "
@@ -377,11 +400,8 @@ def _pdf_a_imagenes(contenido: bytes, max_paginas: int = PAGINAS_PDF_VISION_MAX)
                     raise ErrorValidacion(
                         f"La página {i + 1} del PDF supera el límite de píxeles renderizados."
                     )
-
-                # Convertir a RGB reduce modos exóticos y transparencias complejas.
                 if bitmap.mode not in ("RGB", "L"):
                     bitmap = bitmap.convert("RGB")
-
                 buf = io.BytesIO()
                 bitmap.save(buf, format="PNG", optimize=True)
                 datos = buf.getvalue()
@@ -397,7 +417,9 @@ def _pdf_a_imagenes(contenido: bytes, max_paginas: int = PAGINAS_PDF_VISION_MAX)
                 )
             total_bytes += len(datos)
             if total_bytes > BYTES_MAXIMOS_TOTAL_IMAGENES:
-                raise ErrorValidacion("El conjunto de imágenes renderizadas del PDF es demasiado grande.")
+                raise ErrorValidacion(
+                    "El conjunto de imágenes renderizadas del PDF es demasiado grande."
+                )
             imagenes.append(datos)
     finally:
         pdf.close()
@@ -426,7 +448,6 @@ def _extraer_texto_docx(contenido: bytes) -> str:
 def _validar_imagen(contenido: bytes) -> bytes:
     from PIL import Image
 
-    # Convierte el warning de bomba de descompresión en error.
     Image.MAX_IMAGE_PIXELS = PIXELS_MAXIMOS_IMAGEN
 
     try:
@@ -447,8 +468,6 @@ def _validar_imagen(contenido: bytes) -> bytes:
                     )
 
                 if getattr(img, "n_frames", 1) > 1:
-                    # TIFF/WebP multipágina/animado no aporta valor aquí y amplía la
-                    # superficie de parser. Solo se admiten imágenes de un único frame.
                     if img.format in {"TIFF", "WEBP"}:
                         raise ErrorValidacion("No se admiten imágenes multipágina o animadas.")
 
@@ -492,8 +511,6 @@ def _limpiar_texto(texto: str) -> str:
         logger.info("Texto truncado de %d a %d caracteres", len(texto), LONGITUD_MAXIMA_TEXTO)
         texto = texto[:LONGITUD_MAXIMA_TEXTO]
 
-    # Mantener saltos y tabuladores, quitar controles invisibles y secuencias
-    # potencialmente problemáticas para prompts/exportaciones.
     limpio = "".join(c for c in texto if c.isprintable() or c in "\n\t\r")
     limpio = re.sub(r"\n{4,}", "\n\n\n", limpio)
     return limpio.strip()
@@ -508,6 +525,7 @@ def _documento_a_payload(doc: DocumentoProcesado) -> dict:
         "entrada": {
             "texto": doc.entrada.texto,
             "imagenes": [base64.b64encode(img).decode("ascii") for img in (doc.entrada.imagenes or [])],
+            "imagenes_etiquetas": doc.entrada.imagenes_etiquetas,
             "plantilla": doc.entrada.plantilla,
             "instrucciones_tipo": doc.entrada.instrucciones_tipo,
         },
@@ -516,6 +534,7 @@ def _documento_a_payload(doc: DocumentoProcesado) -> dict:
         "tipo_mime": doc.tipo_mime,
         "tamano_bytes": doc.tamano_bytes,
         "paginas": doc.paginas,
+        "cobertura": doc.cobertura,
     }
 
 
@@ -527,6 +546,7 @@ def _documento_desde_payload(payload: dict) -> DocumentoProcesado:
         entrada=Entrada(
             texto=entrada_payload.get("texto"),
             imagenes=imagenes or None,
+            imagenes_etiquetas=entrada_payload.get("imagenes_etiquetas") or None,
             plantilla=entrada_payload.get("plantilla"),
             instrucciones_tipo=entrada_payload.get("instrucciones_tipo") or {},
         ),
@@ -535,6 +555,7 @@ def _documento_desde_payload(payload: dict) -> DocumentoProcesado:
         tipo_mime=payload["tipo_mime"],
         tamano_bytes=int(payload["tamano_bytes"]),
         paginas=payload.get("paginas"),
+        cobertura=payload.get("cobertura") or {},
     )
 
 
@@ -547,6 +568,65 @@ def _procesar_impl_serializable(contenido: bytes, nombre: str) -> dict:
 # Función pública
 # =============================================================================
 
+def _procesar_pdf(contenido: bytes) -> tuple[Entrada, Ruta, int, dict]:
+    """
+    Procesa un PDF completo aplicando segmentación por zonas.
+
+    Devuelve (entrada, ruta, num_paginas, cobertura).
+    """
+    paginas_texto = _extraer_texto_pdf_por_pagina(contenido)
+    num_paginas = len(paginas_texto)
+
+    zonif = zonas.segmentar_pdf(paginas_texto)
+    texto_zonificado_crudo = zonas.construir_texto_zonificado(zonif)
+    calidad = _calidad_ocr(texto_zonificado_crudo, max(1, zonif.paginas_analizadas))
+    logger.info(
+        "PDF: %d págs totales, %d analizadas por zonas, calidad OCR zonas %.2f",
+        num_paginas, zonif.paginas_analizadas, calidad,
+    )
+
+    cobertura = zonif.resumen()
+    cobertura["calidad_ocr_zonas"] = round(calidad, 3)
+    cobertura["umbral_calidad_ocr"] = UMBRAL_CALIDAD_OCR
+
+    indices_vision = zonas.indices_para_vision(zonif)
+    imagenes: list[bytes] | None = None
+    etiquetas: list[str] | None = None
+    try:
+        imagenes = _pdf_paginas_a_imagenes(contenido, indices_vision)
+        etiquetas = zonas.etiquetas_para_indices(zonif, indices_vision)
+    except ErrorValidacion:
+        raise
+    except Exception as e:
+        logger.warning("No se pudieron rasterizar las zonas del PDF: %s", e)
+        imagenes = None
+        etiquetas = None
+
+    texto_util = calidad >= UMBRAL_CALIDAD_OCR and bool(texto_zonificado_crudo)
+
+    if texto_util and imagenes:
+        ruta: Ruta = "hibrida"
+        texto = _limpiar_texto(texto_zonificado_crudo)
+    elif texto_util:
+        ruta = "texto"
+        texto = _limpiar_texto(texto_zonificado_crudo)
+    elif imagenes:
+        ruta = "vision"
+        texto = None
+        logger.info("Texto OCR de las zonas insuficiente; ruta visión sobre zonas")
+    else:
+        raise ErrorValidacion(
+            "El PDF no tiene texto legible en sus zonas descriptivas y no se "
+            "pudo convertir a imagen. Puede estar dañado o ser demasiado complejo."
+        )
+
+    cobertura["ruta"] = ruta
+    cobertura["paginas_rasterizadas"] = len(imagenes) if imagenes else 0
+
+    entrada = Entrada(texto=texto, imagenes=imagenes, imagenes_etiquetas=etiquetas)
+    return entrada, ruta, num_paginas, cobertura
+
+
 def _procesar_impl(contenido: bytes, nombre: str) -> DocumentoProcesado:
     """Implementación real del procesamiento documental.
 
@@ -557,70 +637,46 @@ def _procesar_impl(contenido: bytes, nombre: str) -> DocumentoProcesado:
 
     texto: str | None = None
     imagenes: list[bytes] | None = None
+    etiquetas: list[str] | None = None
     ruta: Ruta
     paginas: int | None = None
+    cobertura: dict = {}
 
     if familia == "pdf":
-        texto_crudo, paginas = _extraer_texto_pdf(contenido)
-        calidad = _calidad_ocr(texto_crudo, paginas)
-        logger.info(
-            "Calidad estimada del texto PDF: %.2f (%d chars, %d págs)",
-            calidad, len(texto_crudo), paginas,
+        entrada, ruta, paginas, cobertura = _procesar_pdf(contenido)
+        return DocumentoProcesado(
+            entrada=entrada, ruta=ruta, nombre_original=nombre,
+            tipo_mime=mime, tamano_bytes=len(contenido), paginas=paginas,
+            cobertura=cobertura,
         )
 
-        if calidad >= 0.5:
-            texto = _limpiar_texto(texto_crudo)
-
-            if paginas > PAGINAS_PDF_HIBRIDO:
-                ruta = "texto"
-            else:
-                try:
-                    imagenes = _pdf_a_imagenes(contenido, max_paginas=paginas)
-                    ruta = "hibrida"
-                except ErrorValidacion:
-                    raise
-                except Exception as e:
-                    logger.warning("No se pudieron generar imágenes del PDF: %s", e)
-                    ruta = "texto"
-        else:
-            logger.info("Texto OCR de calidad insuficiente; cambiando a ruta visión")
-            try:
-                imagenes = _pdf_a_imagenes(contenido, max_paginas=PAGINAS_PDF_VISION_MAX)
-                ruta = "vision"
-                if paginas > PAGINAS_PDF_VISION_MAX:
-                    logger.info(
-                        "PDF con %d páginas; se procesan las primeras %d en ruta visión",
-                        paginas, PAGINAS_PDF_VISION_MAX,
-                    )
-            except ErrorValidacion:
-                raise
-            except Exception as e:
-                raise ErrorValidacion(
-                    f"El PDF no tiene texto legible y no se pudo convertir "
-                    f"a imagen para procesamiento visual: {e}"
-                ) from None
-
     elif familia == "docx":
-        texto = _limpiar_texto(_extraer_texto_docx(contenido))
-        if not texto:
+        texto_completo = _limpiar_texto(_extraer_texto_docx(contenido))
+        if not texto_completo:
             raise ErrorValidacion("El documento DOCX no contiene texto legible.")
+        texto, cobertura = zonas.segmentar_texto_plano(texto_completo)
+        cobertura["ruta"] = "texto"
         ruta = "texto"
 
     elif familia == "texto":
-        texto = _decodificar_texto(contenido)
-        texto = _limpiar_texto(texto)
-        if not texto:
+        texto_completo = _limpiar_texto(_decodificar_texto(contenido))
+        if not texto_completo:
             raise ErrorValidacion("El fichero de texto está vacío.")
+        texto, cobertura = zonas.segmentar_texto_plano(texto_completo)
+        cobertura["ruta"] = "texto"
         ruta = "texto"
 
     elif familia == "imagen":
+        # Una imagen suelta ya es una parte concreta del libro: no se segmenta.
         imagenes = [_validar_imagen(contenido)]
         ruta = "vision"
+        cobertura = {"estrategia": "imagen_suelta", "ruta": "vision",
+                     "paginas_totales": 1, "paginas_analizadas": 1}
 
     else:
         raise ErrorValidacion(f"Familia de tipo no soportado: {familia}")
 
-    entrada = Entrada(texto=texto, imagenes=imagenes)
+    entrada = Entrada(texto=texto, imagenes=imagenes, imagenes_etiquetas=etiquetas)
 
     return DocumentoProcesado(
         entrada=entrada,
@@ -629,6 +685,7 @@ def _procesar_impl(contenido: bytes, nombre: str) -> DocumentoProcesado:
         tipo_mime=mime,
         tamano_bytes=len(contenido),
         paginas=paginas,
+        cobertura=cobertura,
     )
 
 
@@ -659,7 +716,6 @@ def procesar(contenido: bytes, nombre: str) -> DocumentoProcesado:
                 raise ErrorValidacion("El parser aislado devolvió una respuesta inválida.")
             return _documento_desde_payload(payload)
         except SandboxExecutionError as exc:
-            # Preservar mensajes funcionales de validación y ocultar trazas internas.
             if exc.exception_type == "ErrorValidacion":
                 raise ErrorValidacion(exc.message) from None
             logger.warning(

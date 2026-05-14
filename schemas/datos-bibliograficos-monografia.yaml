@@ -1,5 +1,5 @@
 norma: "MARC21 descriptivo / ISBD"
-version: "0.1-alpha"
+version: "0.2-alpha"
 nombre: "Tipo — datos bibliográficos para monografías impresas modernas"
 idioma: "es"
 areas:
@@ -18,9 +18,29 @@ areas:
         instruccion: >
           Extrae únicamente ISBN visibles. No inventes ISBN. Conserva guiones si aparecen.
           Si aparecen ISBN-10 e ISBN-13, devuelve ambos como lista.
+        ejemplo: "978-84-376-0494-7"
+        error_comun: >
+          No confundas el ISBN con el depósito legal ni con un código de barras
+          numérico distinto. El ISBN tiene 10 o 13 dígitos.
+      - id: "017$a"
+        clave: deposito_legal
+        nombre: "Depósito legal"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: si
+        marc: "017 $a"
+        fuente_preferida: "verso de portada, colofón"
+        instruccion: >
+          Extrae el depósito legal tal como aparece, normalmente con la abreviatura
+          "D.L." o "Depósito legal" seguida de una sigla provincial, un número y un año
+          (por ejemplo: "D.L. M-12345-2008"). Es un dato español muy frecuente y distinto
+          del ISBN. No lo inventes ni lo deduzcas.
+        ejemplo: "D.L. M-12345-2008"
+        error_comun: "No lo confundas con el ISBN ni con la fecha de copyright."
       - id: "041$a"
         clave: lengua_texto
-        nombre: "Lengua del texto"
+        nombre: "Lengua del texto de esta edición"
         tipo: texto
         obligatorio: false
         multiple: false
@@ -28,8 +48,28 @@ areas:
         marc: "041 $a / 008 35-37"
         fuente_preferida: "portada, verso de portada, contenido"
         instruccion: >
-          Indica la lengua principal del texto solo si se puede inferir con seguridad del material aportado.
-          Usa forma textual en español, por ejemplo: español, inglés, francés.
+          Indica la lengua principal del texto DE ESTA EDICIÓN, solo si se puede inferir
+          con seguridad del material aportado. Usa forma textual en español, por ejemplo:
+          español, inglés, francés.
+        error_comun: >
+          Si el libro es una traducción, la lengua del texto es la lengua de la traducción
+          (la edición que tienes delante), NO la lengua original de la obra.
+      - id: "041$h"
+        clave: idioma_original
+        nombre: "Lengua original de la obra"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        marc: "041 $h"
+        fuente_preferida: "portada, verso de portada"
+        instruccion: >
+          Indica la lengua original de la obra SOLO si el material lo menciona
+          explícitamente, por ejemplo "traducido del alemán" o "título original" en otra
+          lengua. Si no hay mención de traducción, devuelve null.
+        error_comun: >
+          No rellenes este campo por suposición. Solo si hay un indicio textual de
+          traducción o de obra original en otra lengua.
   - id: titulo_responsabilidad
     nombre: "Título y mención de responsabilidad"
     elementos:
@@ -45,6 +85,9 @@ areas:
         instruccion: >
           Extrae el título principal tal como aparece en la portada o página de título.
           No incluyas subtítulo ni mención de responsabilidad.
+        error_comun: >
+          Si en el verso aparece un "título original" distinto, NO lo uses como título
+          principal: el título principal es el de la portada de esta edición.
       - id: "245$b"
         clave: subtitulo
         nombre: "Subtítulo u otra información sobre el título"
@@ -56,6 +99,8 @@ areas:
         fuente_preferida: "portada / página de título"
         instruccion: >
           Extrae el subtítulo o resto del título. No repitas el título principal.
+          Si en la portada el título y el subtítulo están separados por dos puntos,
+          un guion o un cambio de tamaño tipográfico, sepáralos.
       - id: "245$c"
         clave: mencion_responsabilidad
         nombre: "Mención de responsabilidad transcrita"
@@ -66,8 +111,33 @@ areas:
         marc: "245 $c"
         fuente_preferida: "portada / página de título"
         instruccion: >
-          Extrae la mención de responsabilidad tal como aparece. No transformes nombres en puntos de acceso.
-          No inviertas apellidos ni añadas fechas. No crees autoridades.
+          Extrae la mención de responsabilidad TAL COMO APARECE, de forma literal,
+          incluyendo a todos los responsables que figuren juntos (autor, traductor,
+          prologuista, ilustrador). No transformes nombres en puntos de acceso, no
+          inviertas apellidos, no añadas fechas y no crees autoridades. Si junto a un
+          nombre aparece "traducción de", "prólogo de", "edición de", consérvalo en la
+          transcripción: indica el rol, no lo conviertas en autor.
+        ejemplo: "Anna Bjørnsdóttir ; traducción de Marta Ruiz Campos"
+        error_comun: >
+          No clasifiques al traductor o al prologuista como autor principal. La mención
+          se transcribe entera y literal; quien decide los puntos de acceso es el
+          profesional, no Tipo.
+      - id: "240$a"
+        clave: titulo_original
+        nombre: "Título original de la obra"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        marc: "240 $a"
+        fuente_preferida: "verso de portada"
+        instruccion: >
+          Extrae el título original SOLO si aparece explícitamente identificado como tal
+          (por ejemplo "Título original:", "Originally published as"). No lo confundas
+          nunca con el título principal de esta edición.
+        error_comun: >
+          Si no hay una mención explícita de "título original", devuelve null. No lo
+          deduzcas a partir del idioma.
   - id: edicion_publicacion
     nombre: "Edición y publicación"
     elementos:
@@ -81,6 +151,9 @@ areas:
         marc: "250 $a"
         fuente_preferida: "portada, verso de portada, colofón"
         instruccion: "Extrae la mención de edición visible, por ejemplo: 2ª edición, edición revisada."
+        error_comun: >
+          No confundas el número de edición con el número de impresión o reimpresión.
+          "3ª reimpresión" no es una mención de edición.
       - id: "264$a"
         clave: lugar_publicacion
         nombre: "Lugar de publicación"
@@ -101,6 +174,10 @@ areas:
         marc: "264 _1 $b"
         fuente_preferida: "portada, verso de portada, colofón"
         instruccion: "Extrae el nombre del editor o editorial tal como aparece."
+        error_comun: >
+          La editorial que aparece en publicidad de otros títulos o en el catálogo del
+          final no es necesariamente la editora de este libro: usa la de la portada o el
+          verso.
       - id: "264$c"
         clave: fecha_publicacion
         nombre: "Fecha de publicación"
@@ -198,6 +275,9 @@ areas:
         instruccion: >
           Extrae la serie tal como aparece, sin convertirla en punto de acceso autorizado.
           No generes campo 830.
+        error_comun: >
+          No confundas la colección editorial con el catálogo de otros títulos de la
+          editorial que a veces aparece al final del libro.
       - id: "500$a"
         clave: nota_general
         nombre: "Nota general"
@@ -228,8 +308,8 @@ areas:
         marc: "520 $a"
         fuente_preferida: "contracubierta, solapa, introducción"
         instruccion: >
-          Resume brevemente el contenido solo si se dispone de contracubierta, solapa o texto suficiente.
-          No inventes argumento ni temática.
+          Resume brevemente el contenido solo si se dispone de contracubierta, solapa o
+          texto suficiente. No inventes argumento ni temática.
       - id: "546$a"
         clave: nota_lengua
         nombre: "Nota de lengua"
@@ -239,4 +319,8 @@ areas:
         extraible: parcial
         marc: "546 $a"
         fuente_preferida: "portada, verso de portada, contenido"
-        instruccion: "Propón nota de lengua solo si hay información relevante, por ejemplo traducción o texto bilingüe."
+        instruccion: >
+          Propón nota de lengua solo si hay información relevante, por ejemplo: traducción
+          de otra lengua, texto bilingüe o edición plurilingüe. Si es traducción y consta
+          el traductor o la lengua original, recógelo aquí de forma breve.
+        ejemplo: "Traducción del italiano"

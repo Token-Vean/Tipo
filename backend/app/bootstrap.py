@@ -34,7 +34,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-MODELO_BASE = os.getenv("MODELO_BASE", "gemma4:e2b")
+MODELO_BASE = os.getenv("MODELO_BASE", "gemma4:e4b")
 MODELO_NOMBRE = os.getenv("MODELO_NOMBRE", "tipo")
 MODELFILE_PATH = Path(os.getenv("MODELFILE_PATH", "/app/Modelfile"))
 PERFIL = os.getenv("PERFIL", "bundled").strip().lower()

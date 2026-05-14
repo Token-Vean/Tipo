@@ -17,7 +17,7 @@ import re
 import signal
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +85,9 @@ class ConjuntoProcesado:
     tamano_bytes: int
     paginas: int | None
     archivos: list[ArchivoEntrada]
+    # Cobertura de zonas: qué se analizó realmente frente al documento
+    # completo. Una entrada por archivo, en el mismo orden que `archivos`.
+    cobertura: list[dict] = field(default_factory=list)
 
 
 class LimiteCuerpoPeticion:
@@ -239,6 +242,7 @@ def _fusionar_documentos(docs: list[tuple[router_entrada.DocumentoProcesado, str
     imagenes: list[bytes] = []
     etiquetas_imagenes: list[str] = []
     archivos: list[ArchivoEntrada] = []
+    cobertura: list[dict] = []
     total_bytes = 0
     paginas_total = 0
     rutas = set()
@@ -248,13 +252,25 @@ def _fusionar_documentos(docs: list[tuple[router_entrada.DocumentoProcesado, str
         if doc.paginas:
             paginas_total += doc.paginas
         archivos.append(ArchivoEntrada(etiqueta, doc.nombre_original, sha256, doc.tipo_mime, doc.tamano_bytes, doc.paginas, doc.ruta))
+        # Cobertura de zonas de este archivo, etiquetada para la auditoría.
+        cob = dict(doc.cobertura or {})
+        cob["etiqueta"] = etiqueta
+        cob["archivo"] = doc.nombre_original
+        cobertura.append(cob)
         if doc.entrada.texto:
             textos.append(f"### Fuente: {etiqueta} — {doc.nombre_original}\n{doc.entrada.texto}")
         if doc.entrada.imagenes:
+            # El router ya etiqueta cada imagen con su zona y página cuando
+            # procede (zonas.etiquetas_para_indices). Se conserva esa etiqueta
+            # y solo se completa con el nombre del archivo de origen.
+            etiquetas_doc = doc.entrada.imagenes_etiquetas or []
             for idx, img in enumerate(doc.entrada.imagenes):
                 imagenes.append(img)
-                sufijo = f" página {idx + 1}" if len(doc.entrada.imagenes) > 1 else ""
-                etiquetas_imagenes.append(f"{etiqueta}{sufijo} — {doc.nombre_original}")
+                if idx < len(etiquetas_doc) and etiquetas_doc[idx]:
+                    etiquetas_imagenes.append(f"{etiquetas_doc[idx]} — {doc.nombre_original}")
+                else:
+                    sufijo = f" página {idx + 1}" if len(doc.entrada.imagenes) > 1 else ""
+                    etiquetas_imagenes.append(f"{etiqueta}{sufijo} — {doc.nombre_original}")
     if "hibrida" in rutas or ({"texto", "vision"} <= rutas):
         ruta = "hibrida"
     elif "vision" in rutas:
@@ -263,7 +279,7 @@ def _fusionar_documentos(docs: list[tuple[router_entrada.DocumentoProcesado, str
         ruta = "texto"
     entrada = extractor.Entrada(texto="\n\n".join(textos).strip() or None, imagenes=imagenes or None, imagenes_etiquetas=etiquetas_imagenes or None)
     nombres = ", ".join(a.nombre for a in archivos[:3]) + ("..." if len(archivos) > 3 else "")
-    return ConjuntoProcesado(entrada, ruta, nombres or "conjunto_sin_nombre", "multipart/mixed" if len(archivos) > 1 else (archivos[0].tipo_mime if archivos else "unknown"), total_bytes, paginas_total or None, archivos)
+    return ConjuntoProcesado(entrada, ruta, nombres or "conjunto_sin_nombre", "multipart/mixed" if len(archivos) > 1 else (archivos[0].tipo_mime if archivos else "unknown"), total_bytes, paginas_total or None, archivos, cobertura)
 
 
 @router.post("/describir")
@@ -329,7 +345,7 @@ async def describir(
         "peticion": peticion_id,
         "idioma_salida": idioma_salida,
         "version_tipo": APP_VERSION,
-        "documento": {"nombre": conjunto.nombre_original, "tipo_mime": conjunto.tipo_mime, "tamano_bytes": conjunto.tamano_bytes, "paginas": conjunto.paginas, "ruta_procesamiento": conjunto.ruta, "archivos": [a.__dict__ for a in conjunto.archivos]},
+        "documento": {"nombre": conjunto.nombre_original, "tipo_mime": conjunto.tipo_mime, "tamano_bytes": conjunto.tamano_bytes, "paginas": conjunto.paginas, "ruta_procesamiento": conjunto.ruta, "archivos": [a.__dict__ for a in conjunto.archivos], "cobertura_zonas": conjunto.cobertura},
         "auditoria": ficha_tecnica,
         "isbd": isbd,
         "propuesta": propuesta.to_dict(),
