@@ -17,9 +17,9 @@ Tipo es una aplicación independiente. Reutiliza componentes técnicos locales y
 - Sin asignación de materias normalizadas.
 - Sin integración ni escritura sobre SIGB externos.
 - Resultado siempre revisable por un profesional.
-- Autenticación local con usuario y contraseña desde la versión `0.2.0-beta.4`.
+- Autenticación local con usuario y contraseña desde la versión `0.2.0-beta.6`.
 
-## Alcance de v0.2.0-beta.4
+## Alcance de v0.2.0-beta.6
 
 - Monografías impresas modernas.
 - Entrada: libro completo en PDF o conjunto de imágenes/documentos relevantes.
@@ -118,7 +118,7 @@ docs/PROMPT_MODELO_TIPO.md
 ```
 
 
-## Novedades 0.2.0-beta.4
+## Novedades 0.2.0-beta.6
 
 - Instalador/panel Windows con detección reforzada de Docker y Ollama.
 - Apagado desde la interfaz con confirmación y pantalla final.

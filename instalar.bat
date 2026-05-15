@@ -11,7 +11,7 @@ setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo.
-echo Tipo 0.2.0-beta.4 - instalacion local
+echo Tipo 0.2.0-beta.6 - instalacion local
 echo ----------------------------------------
 echo.
 
@@ -233,13 +233,23 @@ REM ----------------------------------------------------------------------------
 echo.
 echo [8/10] Verificando permisos del almacen local de usuarios...
 
-"!DOCKER!" compose run --rm --no-deps --user root --entrypoint sh !APP_SERVICE! -c "mkdir -p /app/data && chown -R 10001:10001 /app/data && chmod 700 /app/data" >nul 2>permisos.log
+echo    Deteniendo posibles contenedores previos de Tipo...
+"!DOCKER!" compose down --remove-orphans >nul 2>&1
+"!DOCKER!" rm -f tipo-app tipo-ollama >nul 2>&1
+
+"!DOCKER!" compose --profile tools run --rm fix-permissions >permisos.log 2>&1
 if errorlevel 1 (
     echo.
-    echo    AVISO: No se pudieron reparar automaticamente los permisos del volumen.
-    echo           Tipo intentara arrancar igualmente. Si no permite crear usuario,
-    echo           ejecuta la opcion Reparar permisos desde el panel.
+    echo    ERROR: No se pudieron preparar los permisos del almacen local.
+    echo.
+    echo    Detalles tecnicos para soporte:
     type permisos.log
+    echo.
+    echo    Tipo no continuara porque podria no permitir crear el usuario inicial.
+    echo    Abre Docker Desktop, comprueba que esta arrancado y vuelve a ejecutar este instalador.
+    echo    Si el problema continua, usa la opcion Reparar permisos desde el panel.
+    pause
+    exit /b 1
 ) else (
     echo    OK - Almacen local preparado
 )
@@ -275,13 +285,19 @@ REM ----------------------------------------------------------------------------
 echo.
 echo [10/10] Esperando a que Tipo este listo...
 
-set MAX_INTENTOS=45
+set MAX_INTENTOS=60
 set INTENTO=0
 
 :wait_loop
 set /a INTENTO+=1
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri 'http://localhost:!PUERTO!/api/estado' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
 if not errorlevel 1 goto wait_ok
+
+"!DOCKER!" ps --filter "name=tipo-app" --filter "status=exited" --format "{{.Names}}" | findstr "tipo-app" >nul 2>&1
+if not errorlevel 1 goto app_exited
+
+set /a RESTO=!INTENTO! %% 5
+if !RESTO! EQU 0 echo    Esperando respuesta local... intento !INTENTO!/!MAX_INTENTOS!
 if !INTENTO! GEQ !MAX_INTENTOS! goto wait_timeout
 timeout /t 1 /nobreak >nul
 goto wait_loop
@@ -290,9 +306,29 @@ goto wait_loop
 echo    OK - Tipo responde correctamente
 goto abrir_navegador
 
+:app_exited
+echo.
+echo    ERROR: Tipo se ha detenido durante el arranque.
+echo.
+echo    Ultimos mensajes del contenedor:
+"!DOCKER!" logs --tail 120 tipo-app
+echo.
+echo    Sugerencia: revisa los mensajes anteriores. Si aparece un error de permisos,
+echo    ejecuta de nuevo este instalador o usa Reparar permisos desde el panel.
+pause
+exit /b 1
+
 :wait_timeout
-echo    AVISO - Tipo tarda mas de lo habitual en responder.
-echo           Se abrira el navegador; si no carga, espera unos segundos y recarga.
+echo.
+echo    AVISO - Tipo no ha respondido en el tiempo esperado.
+echo.
+echo    Estado del contenedor:
+"!DOCKER!" ps -a --filter "name=tipo-app" --format "table {{.Names}}	{{.Status}}	{{.Ports}}"
+echo.
+echo    Ultimos mensajes del contenedor:
+"!DOCKER!" logs --tail 120 tipo-app
+echo.
+echo    Se abrira el navegador igualmente por si el arranque termina unos segundos despues.
 
 :abrir_navegador
 echo.

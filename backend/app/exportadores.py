@@ -1,5 +1,5 @@
 """
-Exportadores de Tipo v0.2.0-beta.4.
+Exportadores de Tipo v0.2.0-beta.6.
 
 Exporta la propuesta revisada por el usuario. MARCXML e ISBD se generan de
 forma determinista a partir de campos descriptivos; no se crean autoridades,

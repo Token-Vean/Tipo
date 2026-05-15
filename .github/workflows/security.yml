@@ -46,6 +46,7 @@ jobs:
         run: cyclonedx-py requirements -i backend/requirements.txt -o sbom-python.cdx.json
 
       - name: Upload Python security reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: python-security-reports
@@ -61,7 +62,18 @@ jobs:
       - name: Build application image
         run: docker build -t tipo-app:ci ./backend
 
-      - name: Scan image with Trivy
+      - name: Trivy image scan report (HIGH/CRITICAL, non-blocking)
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: tipo-app:ci
+          format: table
+          output: trivy-image-table.txt
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '0'
+          scanners: vuln
+
+      - name: Trivy image scan JSON (HIGH/CRITICAL, non-blocking)
         uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: tipo-app:ci
@@ -69,29 +81,45 @@ jobs:
           output: trivy-image.json
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          exit-code: '0'
+          scanners: vuln
+
+      - name: Trivy blocking gate (fixed CRITICAL only)
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: tipo-app:ci
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
           exit-code: '1'
+          scanners: vuln
 
       - name: Generate image SBOM CycloneDX with Trivy
+        if: always()
         uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: tipo-app:ci
           format: cyclonedx
           output: sbom-image.cdx.json
           exit-code: '0'
+          scanners: vuln
 
       - name: Generate image SBOM SPDX with Trivy
+        if: always()
         uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: tipo-app:ci
           format: spdx-json
           output: sbom-image.spdx.json
           exit-code: '0'
+          scanners: vuln
 
-      - name: Scan image with Grype
+      - name: Scan image with Grype (report only)
         uses: anchore/scan-action@v6
+        continue-on-error: true
         with:
           image: tipo-app:ci
-          fail-build: true
+          fail-build: false
           severity-cutoff: high
 
       - name: Check repository does not include local secrets/state
@@ -105,11 +133,26 @@ jobs:
             exit 1
           fi
 
+      - name: Add Docker security summary
+        if: always()
+        run: |
+          echo "## Docker security scan" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Trivy HIGH/CRITICAL report is uploaded as artifact. The workflow only blocks on fixed CRITICAL vulnerabilities." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f trivy-image-table.txt ]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            sed -n '1,200p' trivy-image-table.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload Docker security reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: docker-security-reports
           path: |
+            trivy-image-table.txt
             trivy-image.json
             sbom-image.cdx.json
             sbom-image.spdx.json

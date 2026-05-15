@@ -43,14 +43,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
-# Librerías del sistema necesarias en runtime (Pillow, pypdfium2, lxml)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Librerías del sistema necesarias en runtime (Pillow, pypdfium2, lxml).
+# Se ejecuta upgrade para reducir hallazgos de seguridad heredados de la imagen base
+# en el momento de construir la imagen final.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
         libjpeg62-turbo \
         libpng16-16 \
         libtiff6 \
         libwebp7 \
         libxml2 \
         libxslt1.1 \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Usuario no privilegiado

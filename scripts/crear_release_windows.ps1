@@ -2,7 +2,7 @@
 # Tipo - creación de paquete ZIP de release para Windows
 # -----------------------------------------------------------------------------
 # Ejecutar desde la raíz del repositorio:
-#   powershell -ExecutionPolicy Bypass -File scripts\crear_release_windows.ps1 -Version 0.2.0-beta.4
+#   powershell -ExecutionPolicy Bypass -File scripts\crear_release_windows.ps1 -Version 0.2.0-beta.6
 #
 # Resultado:
 #   dist\Tipo-<version>-windows.zip
@@ -14,7 +14,7 @@
 # =============================================================================
 
 param(
-    [string]$Version = "0.2.0-beta.4"
+    [string]$Version = "0.2.0-beta.6"
 )
 
 $ErrorActionPreference = "Stop"

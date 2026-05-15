@@ -1,5 +1,5 @@
 /* ============================================================================
- * Tipo — frontend logic v0.2.0-beta.4
+ * Tipo — frontend logic v0.2.0-beta.6
  * Sin dependencias externas. Toda la lógica de UI vive aquí.
  * ============================================================================ */
 

@@ -54,7 +54,13 @@ function Get-CommandPathSafe {
         if ($cmd -and $cmd.Source) { return $cmd.Source }
     } catch {}
     foreach ($candidate in $Fallbacks) {
-        if ($candidate -and (Test-Path $candidate)) { return $candidate }
+        if ($candidate -and (Test-Path $candidate)) {
+            $dir = Split-Path -Parent $candidate
+            if ($dir -and (($env:PATH -split ';') -notcontains $dir)) {
+                $env:PATH = "$dir;$env:PATH"
+            }
+            return $candidate
+        }
     }
     return $null
 }
@@ -173,10 +179,8 @@ function Repair-DataPermissions {
         [System.Windows.Forms.MessageBox]::Show("Docker Desktop debe estar instalado y arrancado para reparar permisos.", "Tipo", "OK", "Warning") | Out-Null
         return
     }
-    $profile = Get-ProfileName
-    $service = Get-AppServiceName
-    Write-OutputBox "Reparando permisos del volumen local de usuarios con perfil '$profile'..."
-    Invoke-Capture "set COMPOSE_PROFILES=$profile && docker compose build $service && docker compose run --rm --no-deps --user root --entrypoint sh $service -c `"mkdir -p /app/data && chown -R 10001:10001 /app/data && chmod 700 /app/data`""
+    Write-OutputBox "Reparando permisos del volumen local de usuarios..."
+    Invoke-Capture "docker compose --profile tools run --rm fix-permissions"
     Write-OutputBox "Reparacion de permisos finalizada. Si Tipo estaba abierto, reinicialo."
 }
 
@@ -270,7 +274,7 @@ function Show-ResetAdminDialog {
         "TIPO_RECOVERY_PASSWORD=$password" | Set-Content -Encoding UTF8 $tmpEnv
         Write-OutputBox "Preparando recuperación de acceso con perfil '$profile'..."
         Invoke-Capture "set COMPOSE_PROFILES=$profile && docker compose build $service"
-        Invoke-Capture "set COMPOSE_PROFILES=$profile && docker compose run --rm --no-deps --user root --entrypoint sh $service -c `"mkdir -p /app/data && chown -R 10001:10001 /app/data && chmod 700 /app/data`""
+        Invoke-Capture "docker compose --profile tools run --rm fix-permissions"
         Invoke-Capture "set COMPOSE_PROFILES=$profile && docker compose run --rm --no-deps --env-file `"$tmpEnv`" $service python -m app.auth_cli reset-admin --username `"$username`" --password-env TIPO_RECOVERY_PASSWORD"
         [System.Windows.Forms.MessageBox]::Show("Acceso administrador restablecido. Reinicia Tipo e inicia sesión con la nueva contraseña.", "Tipo", "OK", "Information") | Out-Null
     } finally {
@@ -349,7 +353,7 @@ $iconPath = Join-Path $Root "Tipo.ico"
 if (Test-Path $iconPath) { try { $form.Icon = New-Object System.Drawing.Icon($iconPath) } catch {} }
 
 $title = New-Object System.Windows.Forms.Label
-$title.Text = "Tipo 0.2.0-beta.4 - instalacion local segura"
+$title.Text = "Tipo 0.2.0-beta.6 - instalacion local segura"
 $title.Font = New-Object System.Drawing.Font("Segoe UI", 17, [System.Drawing.FontStyle]::Bold)
 $title.Location = New-Object System.Drawing.Point(22, 18)
 $title.Size = New-Object System.Drawing.Size(780, 34)

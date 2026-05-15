@@ -1,6 +1,6 @@
 # Hardening técnico
 
-Tipo v0.2.0-beta.4 está diseñado para uso local.
+Tipo v0.2.0-beta.6 está diseñado para uso local.
 
 ## Controles activos
 

@@ -1,6 +1,6 @@
 FROM ${MODELO_BASE}
 
-# Tipo v0.2.0-beta.4
+# Tipo v0.2.0-beta.6
 # Modelo base: gemma4:e4b. Gemma 4 (Google, 2026) es multimodal texto+imagen,
 # admite system prompt nativo, ventana de 128K y destaca en OCR; e4b es el
 # tamaño "edge" mayor, con más margen de razonamiento que e2b.
