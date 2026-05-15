@@ -201,14 +201,21 @@ jobs:
 
       - name: Check repository does not include local secrets/state
         run: |
-          if find . -name .env -print -quit | grep -q .; then
-            echo "ERROR: .env no debe estar en el repositorio ni en el paquete de release"
+          set -euo pipefail
+          echo "Checking only files tracked by Git, not temporary files created by security tools."
+          tracked_files="$(git ls-files)"
+
+          if printf '%s\n' "$tracked_files" | grep -E '(^|/)\.env$'; then
+            echo "ERROR: .env no debe estar versionado en el repositorio"
             exit 1
           fi
-          if find . \( -name '*.sqlite' -o -name '*.sqlite3' -o -name '*.db' -o -name 'users.json' \) -print -quit | grep -q .; then
-            echo "ERROR: no debe haber bases locales ni users.json en el repositorio"
+
+          if printf '%s\n' "$tracked_files" | grep -E '(^|/)(users\.json|.*\.sqlite|.*\.sqlite3|.*\.db)$'; then
+            echo "ERROR: no debe haber bases locales ni users.json versionados en el repositorio"
             exit 1
           fi
+
+          echo "OK - No hay .env, bases locales ni users.json versionados."
 
       - name: Add Docker security summary
         if: always()
