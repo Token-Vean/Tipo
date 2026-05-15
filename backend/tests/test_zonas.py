@@ -60,7 +60,16 @@ def test_indices_para_vision_respeta_tope_y_prioriza_preliminares():
 
 
 def test_texto_zonificado_incluye_cabeceras_citables():
-    paginas = ["TÍTULO DEL LIBRO"] + ["cuerpo"] * 50 + ["COLOFÓN"]
+    # 52 páginas: 12 preliminares, 34 de cuerpo central y 6 finales.
+    # El marcador de cuerpo central solo aparece en páginas 13-46; por tanto,
+    # debe quedar fuera del texto enviado al modelo.
+    paginas = (
+        ["TÍTULO DEL LIBRO"]
+        + [f"PRELIMINAR {i}" for i in range(2, 13)]
+        + ["CUERPO CENTRAL"] * 34
+        + [f"FINAL {i}" for i in range(47, 52)]
+        + ["COLOFÓN"]
+    )
     z = zonas.segmentar_pdf(paginas)
     texto = zonas.construir_texto_zonificado(z)
     # El modelo debe poder citar zona y página a partir de estas cabeceras.
@@ -68,7 +77,8 @@ def test_texto_zonificado_incluye_cabeceras_citables():
     assert "ZONA: PRELIMINARES" in texto
     assert "ZONA: FINALES" in texto
     assert "TÍTULO DEL LIBRO" in texto
-    assert "cuerpo" not in texto  # el cuerpo se descarta
+    assert "COLOFÓN" in texto
+    assert "CUERPO CENTRAL" not in texto  # el cuerpo central se descarta
 
 
 def test_etiquetas_para_indices_coherentes():

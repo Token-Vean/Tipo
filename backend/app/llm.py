@@ -127,9 +127,86 @@ async def generar(
         return respuesta
 
 
-async def modelos_disponibles() -> list[str]:
-    """Lista los modelos descargados localmente. Útil para la UI."""
+def _humano_bytes(size: int | None) -> str | None:
+    if not isinstance(size, int) or size < 0:
+        return None
+    valor = float(size)
+    for unidad in ("B", "KB", "MB", "GB", "TB"):
+        if valor < 1024 or unidad == "TB":
+            return f"{valor:.1f} {unidad}" if unidad != "B" else f"{int(valor)} B"
+        valor /= 1024
+    return str(size)
+
+
+def _inferir_capacidades(nombre: str, details: dict[str, Any]) -> dict[str, Any]:
+    """Inferencia conservadora de capacidades a partir de metadatos Ollama.
+
+    Ollama no declara todavía un campo uniforme de capacidades por modelo en
+    /api/tags. Por eso se usan heurísticas explícitas y se marca la salida como
+    inferida para que la interfaz pueda advertir al usuario.
+    """
+    n = nombre.lower()
+    families = details.get("families") or []
+    if isinstance(families, str):
+        families = [families]
+    family = str(details.get("family") or "")
+    hay_vision = any(str(f).lower() in {"clip", "vision"} for f in families)
+    patrones_vision = (
+        "llava", "bakllava", "moondream", "minicpm-v", "qwen2-vl",
+        "qwen2.5vl", "qwen3-vl", "gemma3", "gemma4", "granite3.2-vision",
+        "llama3.2-vision", "mistral-small3.1", "mistral-small3.2",
+    )
+    if any(p in n for p in patrones_vision):
+        hay_vision = True
+    return {
+        "texto": True,
+        "vision": bool(hay_vision),
+        "json": True,
+        "inferido": True,
+        "familia": family or (families[0] if families else None),
+    }
+
+
+def enriquecer_modelo_ollama(modelo: dict[str, Any], modelo_recomendado: str | None = None) -> dict[str, Any]:
+    nombre = str(modelo.get("name") or modelo.get("model") or "").strip()
+    details = modelo.get("details") if isinstance(modelo.get("details"), dict) else {}
+    capacidades = _inferir_capacidades(nombre, details)
+    warnings: list[str] = []
+    if not capacidades.get("vision"):
+        warnings.append("No se ha detectado capacidad de visión. Puede funcionar con texto extraído/OCR, pero no es recomendable para imágenes o PDFs sin texto.")
+    if not details:
+        warnings.append("Ollama no ha devuelto metadatos técnicos completos para este modelo.")
+    recomendado = bool(modelo_recomendado and nombre == modelo_recomendado)
+    return {
+        "name": nombre,
+        "model": modelo.get("model") or nombre,
+        "size": modelo.get("size"),
+        "size_human": _humano_bytes(modelo.get("size")),
+        "modified_at": modelo.get("modified_at"),
+        "digest": modelo.get("digest"),
+        "family": details.get("family"),
+        "families": details.get("families") or [],
+        "parameter_size": details.get("parameter_size"),
+        "quantization_level": details.get("quantization_level"),
+        "format": details.get("format"),
+        "capabilities": capacidades,
+        "available": True,
+        "recommended": recomendado,
+        "warnings": warnings,
+    }
+
+
+async def modelos_disponibles(detallado: bool = False) -> list[Any]:
+    """Lista los modelos descargados localmente.
+
+    Con detallado=False mantiene compatibilidad y devuelve solo nombres.
+    Con detallado=True devuelve metadatos enriquecidos para la interfaz.
+    """
     async with httpx.AsyncClient(timeout=TIMEOUT) as cliente:
         resp = await cliente.get(f"{OLLAMA_URL}/api/tags")
         resp.raise_for_status()
-        return [m["name"] for m in resp.json().get("models", []) if isinstance(m, dict) and "name" in m]
+        raw_models = [m for m in resp.json().get("models", []) if isinstance(m, dict) and (m.get("name") or m.get("model"))]
+    if not detallado:
+        return [str(m.get("name") or m.get("model")) for m in raw_models]
+    recomendado = os.getenv("MODELO_NOMBRE", "gemma4:e4b")
+    return [enriquecer_modelo_ollama(m, recomendado) for m in raw_models]

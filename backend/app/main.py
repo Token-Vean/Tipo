@@ -16,9 +16,10 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import api, bootstrap
+from . import api, auth, bootstrap
 from .api import CabecerasSeguridad, LimiteCuerpoPeticion
 from .csrf import ProteccionCSRF
+from .auth import ProteccionAutenticacion
 from .local_access import ProteccionAccesoLocal
 from .version import APP_NAME, APP_VERSION
 
@@ -47,7 +48,9 @@ app = FastAPI(
 app.add_middleware(CabecerasSeguridad)
 app.add_middleware(ProteccionCSRF)
 app.add_middleware(LimiteCuerpoPeticion)
+app.add_middleware(ProteccionAutenticacion)
 app.add_middleware(ProteccionAccesoLocal)
+app.include_router(auth.router, prefix="/api")
 app.include_router(api.router, prefix="/api")
 
 

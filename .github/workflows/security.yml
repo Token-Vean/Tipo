@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -27,22 +28,30 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff pytest pip-audit
+          pip install ruff pytest pip-audit cyclonedx-bom
 
       - name: Lint with Ruff
-        working-directory: backend
-        run: ruff check app ../tests
+        run: ruff check backend/app tests
 
       - name: Run tests
-        working-directory: backend
         env:
           USAR_SANDBOX_PARSERS: "false"
           PYTHONPATH: ${{ github.workspace }}/backend
-        run: pytest ../tests -q
+        run: pytest tests backend/tests -q
 
       - name: Audit Python dependencies
-        working-directory: backend
-        run: pip-audit -r requirements.txt
+        run: pip-audit -r backend/requirements.txt -f json -o pip-audit-results.json
+
+      - name: Generate Python SBOM CycloneDX
+        run: cyclonedx-py requirements -i backend/requirements.txt -o sbom-python.cdx.json
+
+      - name: Upload Python security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-security-reports
+          path: |
+            pip-audit-results.json
+            sbom-python.cdx.json
 
   docker-security:
     runs-on: ubuntu-latest
@@ -52,17 +61,55 @@ jobs:
       - name: Build application image
         run: docker build -t tipo-app:ci ./backend
 
-      - name: Scan image with Trivy container
-        run: |
-          docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$HOME/.cache/trivy:/root/.cache" \
-            aquasec/trivy:0.69.3 \
-            image --exit-code 1 --ignore-unfixed --severity CRITICAL,HIGH tipo-app:ci
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: tipo-app:ci
+          format: json
+          output: trivy-image.json
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
 
-      - name: Check release package does not include .env
+      - name: Generate image SBOM CycloneDX with Trivy
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: tipo-app:ci
+          format: cyclonedx
+          output: sbom-image.cdx.json
+          exit-code: '0'
+
+      - name: Generate image SBOM SPDX with Trivy
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: tipo-app:ci
+          format: spdx-json
+          output: sbom-image.spdx.json
+          exit-code: '0'
+
+      - name: Scan image with Grype
+        uses: anchore/scan-action@v6
+        with:
+          image: tipo-app:ci
+          fail-build: true
+          severity-cutoff: high
+
+      - name: Check repository does not include local secrets/state
         run: |
           if find . -name .env -print -quit | grep -q .; then
             echo "ERROR: .env no debe estar en el repositorio ni en el paquete de release"
             exit 1
           fi
+          if find . \( -name '*.sqlite' -o -name '*.sqlite3' -o -name '*.db' -o -name 'users.json' \) -print -quit | grep -q .; then
+            echo "ERROR: no debe haber bases locales ni users.json en el repositorio"
+            exit 1
+          fi
+
+      - name: Upload Docker security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-security-reports
+          path: |
+            trivy-image.json
+            sbom-image.cdx.json
+            sbom-image.spdx.json

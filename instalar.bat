@@ -1,43 +1,60 @@
 @echo off
 REM =============================================================================
-REM Tipo - instalador para Windows
+REM Tipo - instalador/iniciador para Windows
 REM -----------------------------------------------------------------------------
-REM Comprueba requisitos, detecta Ollama, reconstruye la imagen si el
-REM codigo ha cambiado, arranca los servicios, espera a que la API
-REM responda y abre el navegador.
+REM Pensado para usuarios no expertos: comprueba requisitos, detecta Ollama,
+REM prepara configuracion, fija automaticamente la imagen Python por digest,
+REM construye imagen, repara permisos, inicia Tipo y abre el navegador.
 REM =============================================================================
 
 setlocal EnableDelayedExpansion
-
 cd /d "%~dp0"
 
 echo.
-echo Tipo - instalacion
+echo Tipo 0.2.0-beta.4 - instalacion local
 echo ----------------------------------------
 echo.
 
 REM -----------------------------------------------------------------------------
 REM 1. Docker
 REM -----------------------------------------------------------------------------
-echo [1/8] Comprobando Docker...
+echo [1/10] Comprobando Docker...
 
-docker --version >nul 2>&1
+set "DOCKER=docker"
+where docker >nul 2>&1
+if errorlevel 1 (
+    if exist "%ProgramFiles%\Docker\Docker\resources\bin\docker.exe" (
+        set "DOCKER=%ProgramFiles%\Docker\Docker\resources\bin\docker.exe"
+    ) else if exist "%ProgramFiles(x86)%\Docker\Docker\resources\bin\docker.exe" (
+        set "DOCKER=%ProgramFiles(x86)%\Docker\Docker\resources\bin\docker.exe"
+    ) else (
+        echo.
+        echo    ERROR: Docker Desktop no esta instalado o Windows no puede localizarlo.
+        echo.
+        echo    Tipo necesita Docker Desktop para funcionar.
+        echo    Instala Docker Desktop, abrelo una vez y vuelve a ejecutar este archivo:
+        echo      https://www.docker.com/products/docker-desktop/
+        echo.
+        pause
+        exit /b 1
+    )
+)
+
+"!DOCKER!" --version >nul 2>&1
 if errorlevel 1 (
     echo.
-    echo    ERROR: Docker no esta instalado.
-    echo.
-    echo    Descarga Docker Desktop desde:
-    echo      https://www.docker.com/products/docker-desktop/
+    echo    ERROR: Docker se ha localizado, pero no responde correctamente.
+    echo    Cierra esta ventana, abre Docker Desktop y vuelve a ejecutar el instalador.
     echo.
     pause
     exit /b 1
 )
 
-docker info >nul 2>&1
+"!DOCKER!" info >nul 2>&1
 if errorlevel 1 (
     echo.
-    echo    ERROR: Docker esta instalado pero no esta arrancado.
-    echo    Abre Docker Desktop y espera a que termine de iniciarse.
+    echo    ERROR: Docker esta instalado, pero no esta arrancado.
+    echo    Abre Docker Desktop, espera a que termine de iniciarse y vuelve a ejecutar este instalador.
     echo.
     pause
     exit /b 1
@@ -49,13 +66,13 @@ REM ----------------------------------------------------------------------------
 REM 2. Docker Compose
 REM -----------------------------------------------------------------------------
 echo.
-echo [2/8] Comprobando Docker Compose...
+echo [2/10] Comprobando Docker Compose...
 
-docker compose version >nul 2>&1
+"!DOCKER!" compose version >nul 2>&1
 if errorlevel 1 (
     echo.
     echo    ERROR: Docker Compose no esta disponible.
-    echo    Actualiza Docker Desktop.
+    echo    Actualiza Docker Desktop y vuelve a intentarlo.
     echo.
     pause
     exit /b 1
@@ -67,26 +84,38 @@ REM ----------------------------------------------------------------------------
 REM 3. Deteccion de Ollama
 REM -----------------------------------------------------------------------------
 echo.
-echo [3/8] Detectando motor de IA...
+echo [3/10] Detectando Ollama...
 
 set PERFIL=bundled
+set APP_SERVICE=app
 
-curl -sfm 3 http://localhost:11434/api/tags >nul 2>&1
+set "OLLAMA_EXE="
+where ollama >nul 2>&1
+if not errorlevel 1 set "OLLAMA_EXE=ollama"
+if not defined OLLAMA_EXE if exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" set "OLLAMA_EXE=%LOCALAPPDATA%\Programs\Ollama\ollama.exe"
+if not defined OLLAMA_EXE if exist "%ProgramFiles%\Ollama\ollama.exe" set "OLLAMA_EXE=%ProgramFiles%\Ollama\ollama.exe"
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri 'http://localhost:11434/api/tags' -UseBasicParsing -TimeoutSec 3; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
 if not errorlevel 1 (
     set PERFIL=external
-    echo    OK - Ollama detectado en el equipo ^(puerto 11434^)
-    echo        La aplicacion usara tu Ollama y los modelos que tengas.
+    set APP_SERVICE=app-external
+    echo    OK - Ollama instalado y arrancado ^(localhost:11434^).
+    echo        Tipo usara tu instalacion local de Ollama.
+) else if defined OLLAMA_EXE (
+    echo    AVISO - Ollama parece instalado, pero no esta arrancado en localhost:11434.
+    echo            Tipo continuara usando Ollama dentro de Docker.
+    echo            No tienes que hacer nada para completar la instalacion.
 ) else (
-    echo    OK - No se ha detectado Ollama en el equipo
-    echo        Se instalara Ollama dentro de Docker.
-    echo        La primera vez se descargaran ~4-5 GB.
+    echo    AVISO - No se ha detectado Ollama instalado/arrancado en el equipo.
+    echo            Tipo continuara usando Ollama dentro de Docker.
+    echo            No tienes que instalar Ollama manualmente para usar esta release.
 )
 
 REM -----------------------------------------------------------------------------
-REM 4. Puerto configurado (leido del .env)
+REM 4. Puerto configurado
 REM -----------------------------------------------------------------------------
 echo.
-echo [4/8] Comprobando puerto de la aplicacion...
+echo [4/10] Comprobando puerto de la aplicacion...
 
 set PUERTO=8082
 if exist .env (
@@ -97,13 +126,12 @@ netstat -an | findstr ":!PUERTO! " | findstr "LISTENING" >nul
 if errorlevel 1 (
     echo    OK - Puerto !PUERTO! disponible
 ) else (
-    REM Miramos si es nuestro propio contenedor el que lo ocupa
-    docker ps --filter "name=tipo-app" --format "{{.Names}}" | findstr "tipo-app" >nul
+    "!DOCKER!" ps --filter "name=tipo-app" --format "{{.Names}}" | findstr "tipo-app" >nul
     if not errorlevel 1 (
-        echo    OK - Puerto !PUERTO! ocupado por la propia aplicacion ^(reinicio^)
+        echo    OK - Puerto !PUERTO! ocupado por Tipo ^(se reiniciara^).
     ) else (
-        echo    AVISO - El puerto !PUERTO! esta en uso por otra aplicacion
-        echo           Si el arranque falla, cambia PUERTO en .env a otro libre.
+        echo    AVISO - El puerto !PUERTO! esta en uso por otra aplicacion.
+        echo            Tipo intentara arrancar igualmente. Si falla, revisa el panel de soporte.
     )
 )
 
@@ -111,82 +139,129 @@ REM ----------------------------------------------------------------------------
 REM 5. Configuracion (.env)
 REM -----------------------------------------------------------------------------
 echo.
-echo [5/8] Preparando configuracion...
+echo [5/10] Preparando configuracion local...
 
 if exist .env (
     echo    OK - Fichero .env ya existe
 ) else (
     if exist .env.example (
         copy .env.example .env >nul
-        echo    OK - Fichero .env creado
+        echo    OK - Fichero .env creado a partir de .env.example
+    ) else (
+        echo    ERROR: No se encuentra .env.example.
+        pause
+        exit /b 1
     )
 )
 
-REM Guardar el perfil detectado
 findstr /b "PERFIL=" .env >nul 2>&1
 if not errorlevel 1 (
-    powershell -Command "(Get-Content .env) -replace '^PERFIL=.*', 'PERFIL=!PERFIL!' | Set-Content .env"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "(Get-Content .env) -replace '^PERFIL=.*', 'PERFIL=!PERFIL!' | Set-Content .env"
 ) else (
     echo.>> .env
     echo # Perfil detectado automaticamente>> .env
     echo PERFIL=!PERFIL!>> .env
 )
 
-REM Actualizacion segura del modelo por defecto: solo cambia el valor antiguo.
 findstr /b /c:"MODELO_BASE=gemma3:4b" .env >nul 2>&1
 if not errorlevel 1 (
-    powershell -Command "(Get-Content .env) -replace '^MODELO_BASE=gemma3:4b$', 'MODELO_BASE=gemma4:e2b' | Set-Content .env"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "(Get-Content .env) -replace '^MODELO_BASE=gemma3:4b$', 'MODELO_BASE=gemma4:e4b' | Set-Content .env"
 ) else (
     findstr /b "MODELO_BASE=" .env >nul 2>&1
-    if errorlevel 1 echo MODELO_BASE=gemma4:e2b>> .env
+    if errorlevel 1 echo MODELO_BASE=gemma4:e4b>> .env
+)
+findstr /b /c:"MODELO_NOMBRE=tipo" .env >nul 2>&1
+if not errorlevel 1 (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "(Get-Content .env) -replace '^MODELO_NOMBRE=tipo$', 'MODELO_NOMBRE=gemma4:e4b' | Set-Content .env"
+) else (
+    findstr /b "MODELO_NOMBRE=" .env >nul 2>&1
+    if errorlevel 1 echo MODELO_NOMBRE=gemma4:e4b>> .env
 )
 
-REM -----------------------------------------------------------------------------
-REM 5.5. Tipografias
-REM -----------------------------------------------------------------------------
-echo.
-echo [5.5/8] Comprobando tipografias...
-echo    La interfaz usa tipografias del sistema.
-echo    Las fuentes autohospedadas son opcionales.
-echo    Si quieres instalarlas, ejecuta frontend\static\fonts\descargar-fuentes.bat manualmente.
+findstr /b "TIPO_CREAR_MODELO_DERIVADO=" .env >nul 2>&1
+if errorlevel 1 echo TIPO_CREAR_MODELO_DERIVADO=false>> .env
+
+echo    OK - Perfil activo: !PERFIL!
 
 REM -----------------------------------------------------------------------------
-REM 6. Reconstruir la imagen si es necesario
+REM 6. Fijar imagen Python por digest de forma automatica
 REM -----------------------------------------------------------------------------
 echo.
-echo [6/8] Preparando la imagen de la aplicacion...
-echo        ^(si has actualizado el codigo, esto tardara ~30s^)
+echo [6/10] Fijando imagen base Python por digest...
+
+echo        Descargando/metadatando python:3.12-slim. Puede tardar la primera vez.
+"!DOCKER!" pull python:3.12-slim >nul 2>python-image.log
+if errorlevel 1 (
+    echo    AVISO - No se pudo resolver ahora el digest de python:3.12-slim.
+    echo            Se usara la referencia ya configurada en .env.
+    type python-image.log
+) else (
+    set "PYTHON_IMAGE_DIGEST="
+    for /f "delims=" %%i in ('"!DOCKER!" image inspect python:3.12-slim --format "{{index .RepoDigests 0}}" 2^>nul') do set "PYTHON_IMAGE_DIGEST=%%i"
+    if defined PYTHON_IMAGE_DIGEST (
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "$path='.env'; $value='PYTHON_IMAGE=!PYTHON_IMAGE_DIGEST!'; $lines=@(); if(Test-Path $path){$lines=Get-Content $path}; if($lines -match '^PYTHON_IMAGE='){ $lines = $lines -replace '^PYTHON_IMAGE=.*', $value } else { $lines += $value }; Set-Content -Encoding ASCII $path $lines"
+        echo    OK - Imagen Python fijada: !PYTHON_IMAGE_DIGEST!
+    ) else (
+        echo    AVISO - Docker no devolvio RepoDigest. Se usara python:3.12-slim.
+    )
+)
+del python-image.log >nul 2>&1
+
+REM -----------------------------------------------------------------------------
+REM 7. Construccion de imagen
+REM -----------------------------------------------------------------------------
+echo.
+echo [7/10] Preparando imagen de Tipo...
+echo        Este paso puede tardar la primera vez.
 
 set COMPOSE_PROFILES=!PERFIL!
 
-docker compose build >nul 2>build.log
+"!DOCKER!" compose build !APP_SERVICE! >nul 2>build.log
 if errorlevel 1 (
     echo.
-    echo    ERROR: Fallo al construir la imagen. Detalles en build.log
+    echo    ERROR: Fallo al construir la imagen. Detalles:
     type build.log
     pause
     exit /b 1
 )
-echo    OK - Imagen preparada
 del build.log >nul 2>&1
+echo    OK - Imagen preparada
 
 REM -----------------------------------------------------------------------------
-REM 7. Arrancar servicios
+REM 8. Reparacion preventiva de permisos del volumen local
 REM -----------------------------------------------------------------------------
 echo.
-echo [7/8] Arrancando los servicios...
+echo [8/10] Verificando permisos del almacen local de usuarios...
 
-REM Detenemos primero por si habia una version anterior corriendo
-docker compose down >nul 2>&1
+"!DOCKER!" compose run --rm --no-deps --user root --entrypoint sh !APP_SERVICE! -c "mkdir -p /app/data && chown -R 10001:10001 /app/data && chmod 700 /app/data" >nul 2>permisos.log
+if errorlevel 1 (
+    echo.
+    echo    AVISO: No se pudieron reparar automaticamente los permisos del volumen.
+    echo           Tipo intentara arrancar igualmente. Si no permite crear usuario,
+    echo           ejecuta la opcion Reparar permisos desde el panel.
+    type permisos.log
+) else (
+    echo    OK - Almacen local preparado
+)
+del permisos.log >nul 2>&1
 
-docker compose up -d
+REM -----------------------------------------------------------------------------
+REM 9. Arranque
+REM -----------------------------------------------------------------------------
+echo.
+echo [9/10] Arrancando Tipo...
+
+"!DOCKER!" compose down >nul 2>&1
+
+"!DOCKER!" compose up -d
 if errorlevel 1 (
     echo.
     echo    ERROR: No se pudieron arrancar los servicios.
     echo.
     echo    Causas habituales:
     echo      - Puerto !PUERTO! en uso por otra aplicacion.
-    echo      - Espacio en disco insuficiente.
+    echo      - Docker Desktop sin recursos suficientes.
+    echo      - Falta de espacio en disco.
     echo.
     pause
     exit /b 1
@@ -195,49 +270,45 @@ if errorlevel 1 (
 echo    OK - Servicios arrancados
 
 REM -----------------------------------------------------------------------------
-REM 8. Esperar a que la API responda y abrir navegador
+REM 10. Esperar API y abrir navegador
 REM -----------------------------------------------------------------------------
 echo.
-echo [8/8] Esperando a que la aplicacion este lista...
+echo [10/10] Esperando a que Tipo este listo...
 
-set MAX_INTENTOS=30
+set MAX_INTENTOS=45
 set INTENTO=0
 
 :wait_loop
 set /a INTENTO+=1
-curl -sfm 2 http://localhost:!PUERTO!/api/estado >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri 'http://localhost:!PUERTO!/api/estado' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
 if not errorlevel 1 goto wait_ok
 if !INTENTO! GEQ !MAX_INTENTOS! goto wait_timeout
 timeout /t 1 /nobreak >nul
 goto wait_loop
 
 :wait_ok
-echo    OK - Aplicacion lista
+echo    OK - Tipo responde correctamente
 goto abrir_navegador
 
 :wait_timeout
-echo    AVISO - La aplicacion esta tardando mas de lo habitual.
-echo           Abriendo el navegador igualmente; si no se ve nada,
-echo           espera unos segundos y recarga la pagina.
+echo    AVISO - Tipo tarda mas de lo habitual en responder.
+echo           Se abrira el navegador; si no carga, espera unos segundos y recarga.
 
 :abrir_navegador
 echo.
 echo ----------------------------------------
-echo.
 echo Instalacion completada.
 echo.
-echo Abriendo el navegador en: http://localhost:!PUERTO!
+echo URL: http://localhost:!PUERTO!
+echo Perfil: !PERFIL!
 echo.
-echo Modo de despliegue activo:   !PERFIL!
-echo Para detener la aplicacion:   detener.bat
-echo Para ver el estado:           docker compose ps
-echo Para ver los logs:            docker compose logs -f
+echo En el primer arranque, Tipo pedira crear un usuario administrador local.
+echo Recuerda la contrasena: no se sube a ningun servicio externo.
 echo.
 
-REM Abrir el navegador
 start "" "http://localhost:!PUERTO!"
 
-echo La ventana del navegador deberia haberse abierto.
-echo Si no, copia esta URL manualmente: http://localhost:!PUERTO!
+echo Puedes dejar esta ventana abierta mientras trabajas con Tipo.
+echo Si apagas Tipo desde la interfaz web, podras cerrar esta ventana o usar el panel.
 echo.
 pause

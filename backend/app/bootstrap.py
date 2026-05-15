@@ -35,9 +35,10 @@ logger = logging.getLogger(__name__)
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 MODELO_BASE = os.getenv("MODELO_BASE", "gemma4:e4b")
-MODELO_NOMBRE = os.getenv("MODELO_NOMBRE", "tipo")
+MODELO_NOMBRE = os.getenv("MODELO_NOMBRE", MODELO_BASE)
 MODELFILE_PATH = Path(os.getenv("MODELFILE_PATH", "/app/Modelfile"))
 PERFIL = os.getenv("PERFIL", "bundled").strip().lower()
+TIPO_CREAR_MODELO_DERIVADO = os.getenv("TIPO_CREAR_MODELO_DERIVADO", "false").strip().lower() in {"1", "true", "yes", "si", "sí", "on"}
 
 estado: dict = {
     "fase": "iniciando",
@@ -46,6 +47,7 @@ estado: dict = {
     "perfil": PERFIL,
     "modelo_base": MODELO_BASE,
     "modelo_nombre": MODELO_NOMBRE,
+    "crear_modelo_derivado": TIPO_CREAR_MODELO_DERIVADO,
 }
 
 
@@ -70,7 +72,10 @@ async def preparar() -> None:
     try:
         await _esperar_ollama()
         await _asegurar_modelo_base()
-        await _crear_modelo_derivado()
+        if TIPO_CREAR_MODELO_DERIVADO and MODELO_NOMBRE != MODELO_BASE:
+            await _crear_modelo_derivado()
+        else:
+            logger.info("Modelo derivado desactivado; se usará %s", MODELO_NOMBRE)
         estado.update(fase="listo", mensaje="Todo preparado", listo=True)
         logger.info("Bootstrap completado: %s disponible", MODELO_NOMBRE)
     except Exception as e:

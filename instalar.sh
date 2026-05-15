@@ -73,7 +73,7 @@ if [[ "$PERFIL" == "external" ]]; then
     nota "La aplicación usará tu Ollama y los modelos que tengas."
 else
     ok "No se ha detectado Ollama en el equipo"
-    nota "Se instalará Ollama dentro de Docker (~4-5 GB la primera vez)."
+    nota "Se usará Ollama dentro de Docker. Si prefieres Ollama nativo, instálalo desde https://ollama.com/download y vuelve a ejecutar este script."
 fi
 
 # -----------------------------------------------------------------------------
@@ -127,9 +127,18 @@ fi
 # Actualización segura del modelo por defecto: solo cambia el valor antiguo
 # del paquete anterior; respeta cualquier modelo personalizado por el usuario.
 if grep -q "^MODELO_BASE=gemma3:4b$" .env 2>/dev/null; then
-    sed -i.bak "s/^MODELO_BASE=gemma3:4b$/MODELO_BASE=gemma4:e2b/" .env && rm -f .env.bak
+    sed -i.bak "s/^MODELO_BASE=gemma3:4b$/MODELO_BASE=gemma4:e4b/" .env && rm -f .env.bak
 elif ! grep -q "^MODELO_BASE=" .env 2>/dev/null; then
-    echo "MODELO_BASE=gemma4:e2b" >> .env
+    echo "MODELO_BASE=gemma4:e4b" >> .env
+fi
+if grep -q "^MODELO_NOMBRE=tipo$" .env 2>/dev/null; then
+    sed -i.bak "s/^MODELO_NOMBRE=tipo$/MODELO_NOMBRE=gemma4:e4b/" .env && rm -f .env.bak
+elif ! grep -q "^MODELO_NOMBRE=" .env 2>/dev/null; then
+    echo "MODELO_NOMBRE=gemma4:e4b" >> .env
+fi
+
+if ! grep -q "^TIPO_CREAR_MODELO_DERIVADO=" .env 2>/dev/null; then
+    echo "TIPO_CREAR_MODELO_DERIVADO=false" >> .env
 fi
 
 # -----------------------------------------------------------------------------
@@ -203,6 +212,8 @@ echo ""
 echo "Modo de despliegue activo:   ${NEG}${PERFIL}${FIN}"
 echo "Para detener la aplicación:  ${NEG}./detener.sh${FIN}"
 echo "Para ver los logs:           ${NEG}$COMPOSE logs -f${FIN}"
+echo ""
+echo "Seguridad: si es el primer arranque, Tipo pedirá crear un usuario administrador local."
 echo ""
 
 # Abrir el navegador según el sistema

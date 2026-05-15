@@ -7,6 +7,16 @@ setlocal EnableDelayedExpansion
 
 cd /d "%~dp0"
 
+set "DOCKER=docker"
+where docker >nul 2>&1
+if errorlevel 1 (
+    if exist "%ProgramFiles%\Docker\Docker\resources\bin\docker.exe" (
+        set "DOCKER=%ProgramFiles%\Docker\Docker\resources\bin\docker.exe"
+    ) else if exist "%ProgramFiles(x86)%\Docker\Docker\resources\bin\docker.exe" (
+        set "DOCKER=%ProgramFiles(x86)%\Docker\Docker\resources\bin\docker.exe"
+    )
+)
+
 REM Recuperar perfil del .env
 set PERFIL=bundled,external
 if exist .env (
@@ -16,7 +26,7 @@ if exist .env (
 set COMPOSE_PROFILES=!PERFIL!
 
 echo Deteniendo servicios...
-docker compose down
+"!DOCKER!" compose down
 
 echo.
 echo Servicios detenidos.

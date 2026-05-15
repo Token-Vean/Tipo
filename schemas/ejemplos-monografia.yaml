@@ -1,291 +1,1017 @@
 # Ejemplos resueltos para el extractor de Tipo (few-shot)
 # ---------------------------------------------------------------------------
-# Cómo funciona:
-#   El extractor (backend/app/extractor.py) carga este fichero al construir el
-#   prompt e inyecta los primeros MAX_EJEMPLOS_PROMPT ejemplos como
-#   demostraciones de extracción correcta. Si el fichero no existe, Tipo
-#   funciona igual, solo que sin few-shot.
+# Estos 10 casos están redactados a mano siguiendo convenciones ISBD y
+# MARC21 habituales en catalogación bibliotecaria en español: transcripción
+# literal de la mención de responsabilidad; fecha del Área 4 con "D.L."
+# cuando solo consta en depósito legal; series entre paréntesis con punto y
+# coma antes del número; "(eds.)" tratado como mención de responsabilidad
+# del Área 1 (no como Área 2); el ilustrador de cubierta NUNCA se añade
+# como nota; etc.
 #
-# Cómo se empaqueta "internamente" con la herramienta:
-#   Este YAML se copia dentro de la imagen, en /app/schemas/, junto al esquema.
-#   No se descarga nada en tiempo de ejecución: los ejemplos viajan con Tipo,
-#   coherente con su filosofía local-first y sin dependencia de red.
-#
-# Sobre el origen de los ejemplos:
-#   Son casos SINTÉTICOS construidos a mano siguiendo las convenciones de
-#   descripción de la BNE y de ISBD (formato del depósito legal con sigla
-#   provincial, ISBN-13 con guiones, transcripción literal de la mención de
-#   responsabilidad, prioridad de portada sobre verso). NO reproducen ningún
-#   registro concreto de la BNE: ilustran el método, no copian catálogo.
-#   Para regenerarlos o ampliarlos a partir de registros reales, ver
-#   examples/construir_ejemplos_bne.py.
+# El YAML se copia dentro de la imagen en /app/schemas/, junto al esquema.
+# No se descarga nada en tiempo de ejecución. Para regenerar a partir de
+# registros MARCXML reales de la BNE, ver examples/construir_ejemplos_bne.py.
 #
 # Estructura de cada ejemplo:
-#   descripcion : qué caso difícil ilustra (no se envía como dato, orienta)
-#   texto       : material simulado, con las cabeceras de zona reales de Tipo
-#   salida      : JSON exactamente con la forma que Tipo espera del modelo
+#   descripcion : qué caso difícil ilustra
+#   texto       : material simulado con las cabeceras de zona reales de Tipo
+#   salida      : JSON con campos atómicos + bloques isbd_area_*
 
 ejemplos:
 
   - descripcion: >
-      Traducción. El traductor NO es autor principal; el idioma del texto es el
-      de esta edición (español), no el original (alemán). El "título original"
-      del verso no es el título principal.
+      Caso "De Madrid al cielo". La fecha está ausente de la portada pero
+      presente en D.L. y ©: en el Área 4 se transcribe con "D.L. 1994".
+      El ilustrador de cubierta NO se añade como nota. El premio sí es nota.
     texto: |
       ########## ZONA: PRELIMINARES (cubierta, portada, verso de portada, índice) ##########
 
-      ===== preliminares · página 3 de 248 =====
-      LA CASA DEL ACANTILADO
-      Greta Hoffmann
-      traducción de Marta Ruiz Campos
-      Ediciones Marea
+      ===== preliminares · página 4 de 12 =====
+      Ismael Grasa
+      De Madrid al cielo
+
+      EDITORIAL ANAGRAMA
       Barcelona
 
-      ===== preliminares · página 4 de 248 =====
-      Título original: Das Haus an der Klippe
-      © 2019, Greta Hoffmann
-      © 2021 de la traducción: Marta Ruiz Campos
-      © 2021, Ediciones Marea, S. L.
-      Primera edición: marzo de 2021
-      ISBN: 978-84-18147-22-9
-      Depósito legal: B 4521-2021
-      Impreso en España
+      ===== preliminares · página 5 de 12 =====
+      Portada: Julio Vivas
+      Ilustración: «Cibeles y Neptuno», Ceesepe, 1987
+
+      © Ismael Grasa, 1994
+      © EDITORIAL ANAGRAMA, S.A., 1994
+      Pedró de la Creu, 58
+      08034 Barcelona
+
+      ISBN: 84-339-0980-0
+      Depósito Legal: B-39791-1994
+      Printed in Spain
+      Libergraf, S.L., Constitució, 19, 08014 Barcelona
+
+      El día 7 de noviembre de 1994, un jurado compuesto por Salvador
+      Clotas, Juan Cueto, Luis Goytisolo, Esther Tusquets y el editor
+      Jorge Herralde, otorgó el XII Premio Herralde de Novela, ex-aequo,
+      a La ciudad doble, de Carlos Perellón, y La historia del silencio,
+      de Pedro Zarraluki. Resultaron finalistas, también ex-aequo, De
+      Madrid al cielo, de Ismael Grasa, y El copista, de Teresa Ruiz Rosas.
     salida:
       campos:
         isbn:
-          valor: ["978-84-18147-22-9"]
+          valor: ["84-339-0980-0"]
           confianza: "alta"
-          evidencia: "ISBN: 978-84-18147-22-9"
-          zona: "preliminares · página 4"
+          evidencia: "ISBN: 84-339-0980-0"
+          zona: "preliminares · página 5"
         deposito_legal:
-          valor: "B 4521-2021"
+          valor: "B-39791-1994"
           confianza: "alta"
-          evidencia: "Depósito legal: B 4521-2021"
-          zona: "preliminares · página 4"
+          evidencia: "Depósito Legal: B-39791-1994"
+          zona: "preliminares · página 5"
         lengua_texto:
           valor: "español"
           confianza: "media"
-          evidencia: "© 2021 de la traducción: Marta Ruiz Campos"
-          zona: "preliminares · página 4"
-        idioma_original:
-          valor: "alemán"
-          confianza: "alta"
-          evidencia: "Título original: Das Haus an der Klippe"
+          evidencia: "Barcelona / Printed in Spain"
           zona: "preliminares · página 4"
         titulo_principal:
-          valor: "La casa del acantilado"
+          valor: "De Madrid al cielo"
           confianza: "alta"
-          evidencia: "LA CASA DEL ACANTILADO"
-          zona: "preliminares · página 3"
-        subtitulo:
+          evidencia: "De Madrid al cielo"
+          zona: "preliminares · página 4"
+        mencion_responsabilidad:
+          valor: "Ismael Grasa"
+          confianza: "alta"
+          evidencia: "Ismael Grasa"
+          zona: "preliminares · página 4"
+        mencion_edicion:
           valor: null
           confianza: null
           evidencia: null
           zona: null
-        mencion_responsabilidad:
-          valor: "Greta Hoffmann ; traducción de Marta Ruiz Campos"
-          confianza: "alta"
-          evidencia: "Greta Hoffmann / traducción de Marta Ruiz Campos"
-          zona: "preliminares · página 3"
-        titulo_original:
-          valor: "Das Haus an der Klippe"
-          confianza: "alta"
-          evidencia: "Título original: Das Haus an der Klippe"
-          zona: "preliminares · página 4"
-        mencion_edicion:
-          valor: "Primera edición"
-          confianza: "alta"
-          evidencia: "Primera edición: marzo de 2021"
-          zona: "preliminares · página 4"
         lugar_publicacion:
           valor: "Barcelona"
           confianza: "alta"
-          evidencia: "Ediciones Marea / Barcelona"
-          zona: "preliminares · página 3"
+          evidencia: "EDITORIAL ANAGRAMA / Barcelona"
+          zona: "preliminares · página 4"
         editor:
-          valor: "Ediciones Marea"
+          valor: "Anagrama"
           confianza: "alta"
-          evidencia: "Ediciones Marea, S. L."
+          evidencia: "EDITORIAL ANAGRAMA"
           zona: "preliminares · página 4"
         fecha_publicacion:
-          valor: "2021"
+          valor: "1994"
           confianza: "alta"
-          evidencia: "Primera edición: marzo de 2021"
-          zona: "preliminares · página 4"
+          evidencia: "Depósito Legal: B-39791-1994"
+          zona: "preliminares · página 5"
         fecha_copyright:
-          valor: "2021"
-          confianza: "media"
-          evidencia: "© 2021, Ediciones Marea, S. L."
-          zona: "preliminares · página 4"
-        nota_lengua:
-          valor: "Traducción del alemán"
+          valor: "1994"
           confianza: "alta"
-          evidencia: "Título original: Das Haus an der Klippe"
+          evidencia: "© Ismael Grasa, 1994"
+          zona: "preliminares · página 5"
+        nota_general:
+          valor: "Finalista premio Herralde de novela 1994"
+          confianza: "alta"
+          evidencia: "Resultaron finalistas, también ex-aequo, De Madrid al cielo, de Ismael Grasa"
+          zona: "preliminares · página 5"
+        isbd_area_0:
+          valor: "Texto (visual) : sin mediación"
+          confianza: "alta"
+          evidencia: "convención para monografía impresa"
+          zona: null
+        isbd_area_1:
+          valor: "De Madrid al cielo / Ismael Grasa"
+          confianza: "alta"
+          evidencia: "De Madrid al cielo / Ismael Grasa"
           zona: "preliminares · página 4"
+        isbd_area_2:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        isbd_area_4:
+          valor: "Barcelona : Anagrama, D.L. 1994"
+          confianza: "alta"
+          evidencia: "EDITORIAL ANAGRAMA / Barcelona / Depósito Legal: B-39791-1994"
+          zona: "preliminares · página 4"
+        isbd_area_5:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        isbd_area_6:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        isbd_area_7:
+          valor: "Finalista premio Herralde de novela 1994"
+          confianza: "alta"
+          evidencia: "Resultaron finalistas, también ex-aequo, De Madrid al cielo, de Ismael Grasa"
+          zona: "preliminares · página 5"
+        isbd_area_8:
+          valor: "ISBN 84-339-0980-0\nD.L. B-39791-1994"
+          confianza: "alta"
+          evidencia: "ISBN: 84-339-0980-0 / Depósito Legal: B-39791-1994"
+          zona: "preliminares · página 5"
 
   - descripcion: >
-      Varios responsables en portada con roles distintos. Solo el autor de la
-      obra va como tal; coordinador, prologuista e ilustradora son
-      responsabilidad secundaria y se transcriben literalmente, no se
-      reclasifican. Sin ISBN visible en el material aportado: campo a null.
+      Caso Antología del género chico. "Edición de Alberto Romero Ferrer"
+      es mención de responsabilidad del Área 1 (245$c), NO mención de
+      edición del Área 2. La serie va entre paréntesis.
     texto: |
       ########## ZONA: PRELIMINARES (cubierta, portada, verso de portada, índice) ##########
 
-      ===== preliminares · página 1 de 192 =====
-      CUADERNOS DEL DUERO
-      Memoria de un río
-      Julián Aceves
-      edición de Pilar Notario
-      prólogo de Eduardo Sanz
-      ilustraciones de Clara Vidal
-      Soria : Editorial Páramo, 2018
+      ===== preliminares · página 4 de 14 =====
+      Letras Hispánicas
 
-      ===== preliminares · página 2 de 192 =====
-      © Julián Aceves, 2018
-      © de esta edición: Editorial Páramo
-      Colección Cuadernos del Duero, 7
-      Depósito legal: SO 88-2018
+      Antología
+      del Género Chico
+
+      Edición de Alberto Romero Ferrer
+
+      CÁTEDRA
+      LETRAS HISPÁNICAS
+
+      ===== preliminares · página 5 de 14 =====
+      1.ª edición, 2005
+
+      Ilustración de cubierta: Madrileña del barrio de Lavapiés
+      © Archivo Anaya
+
+      © Ediciones Cátedra (Grupo Anaya, S.A.), 2005
+      Juan Ignacio Luca de Tena, 15. 28027 Madrid
+      Depósito legal: M. 17.691-2005
+      I.S.B.N.: 84-376-2238-7
+      Printed in Spain
+      Impreso en Anzos, S.L.
+      Fuenlabrada (Madrid)
     salida:
       campos:
         isbn:
-          valor: null
-          confianza: null
-          evidencia: null
-          zona: null
+          valor: ["84-376-2238-7"]
+          confianza: "alta"
+          evidencia: "I.S.B.N.: 84-376-2238-7"
+          zona: "preliminares · página 5"
         deposito_legal:
-          valor: "SO 88-2018"
+          valor: "M-17691-2005"
           confianza: "alta"
-          evidencia: "Depósito legal: SO 88-2018"
-          zona: "preliminares · página 2"
-        lengua_texto:
-          valor: "español"
-          confianza: "media"
-          evidencia: "Soria : Editorial Páramo, 2018"
-          zona: "preliminares · página 1"
-        idioma_original:
-          valor: null
-          confianza: null
-          evidencia: null
-          zona: null
+          evidencia: "Depósito legal: M. 17.691-2005"
+          zona: "preliminares · página 5"
         titulo_principal:
-          valor: "Memoria de un río"
+          valor: "Antología del género chico"
           confianza: "alta"
-          evidencia: "Memoria de un río"
-          zona: "preliminares · página 1"
-        subtitulo:
-          valor: null
-          confianza: null
-          evidencia: null
-          zona: null
+          evidencia: "Antología del Género Chico"
+          zona: "preliminares · página 4"
         mencion_responsabilidad:
-          valor: "Julián Aceves ; edición de Pilar Notario ; prólogo de Eduardo Sanz ; ilustraciones de Clara Vidal"
+          valor: "edición de Alberto Romero Ferrer"
           confianza: "alta"
-          evidencia: "Julián Aceves / edición de Pilar Notario / prólogo de Eduardo Sanz / ilustraciones de Clara Vidal"
-          zona: "preliminares · página 1"
-        titulo_original:
-          valor: null
-          confianza: null
-          evidencia: null
-          zona: null
+          evidencia: "Edición de Alberto Romero Ferrer"
+          zona: "preliminares · página 4"
         mencion_edicion:
-          valor: null
-          confianza: null
-          evidencia: null
-          zona: null
-        lugar_publicacion:
-          valor: "Soria"
-          confianza: "alta"
-          evidencia: "Soria : Editorial Páramo, 2018"
-          zona: "preliminares · página 1"
-        editor:
-          valor: "Editorial Páramo"
-          confianza: "alta"
-          evidencia: "Soria : Editorial Páramo, 2018"
-          zona: "preliminares · página 1"
-        fecha_publicacion:
-          valor: "2018"
-          confianza: "alta"
-          evidencia: "Soria : Editorial Páramo, 2018"
-          zona: "preliminares · página 1"
-        fecha_copyright:
-          valor: "2018"
+          valor: "1ª ed."
           confianza: "media"
-          evidencia: "© Julián Aceves, 2018"
-          zona: "preliminares · página 2"
-        serie_transcrita:
-          valor: "Colección Cuadernos del Duero, 7"
+          evidencia: "1.ª edición, 2005"
+          zona: "preliminares · página 5"
+        lugar_publicacion:
+          valor: "Madrid"
           confianza: "alta"
-          evidencia: "Colección Cuadernos del Duero, 7"
-          zona: "preliminares · página 2"
+          evidencia: "Ediciones Cátedra (Grupo Anaya, S.A.) / Madrid"
+          zona: "preliminares · página 5"
+        editor:
+          valor: "Cátedra"
+          confianza: "alta"
+          evidencia: "Ediciones Cátedra (Grupo Anaya, S.A.)"
+          zona: "preliminares · página 5"
+        fecha_publicacion:
+          valor: "2005"
+          confianza: "alta"
+          evidencia: "1.ª edición, 2005"
+          zona: "preliminares · página 5"
+        serie_transcrita:
+          valor: "Letras Hispánicas"
+          confianza: "alta"
+          evidencia: "Letras Hispánicas"
+          zona: "preliminares · página 4"
+        nota_bibliografia:
+          valor: "Bibliografía"
+          confianza: "media"
+          evidencia: "BIBLIOGRAFÍA (en el índice)"
+          zona: "preliminares · página 4"
+        isbd_area_0:
+          valor: "Texto (visual) : sin mediación"
+          confianza: "alta"
+          evidencia: "convención"
+          zona: null
+        isbd_area_1:
+          valor: "Antología del género chico / edición de Alberto Romero Ferrer"
+          confianza: "alta"
+          evidencia: "Antología del Género Chico / Edición de Alberto Romero Ferrer"
+          zona: "preliminares · página 4"
+        isbd_area_2:
+          valor: "1ª ed."
+          confianza: "media"
+          evidencia: "1.ª edición, 2005"
+          zona: "preliminares · página 5"
+        isbd_area_4:
+          valor: "Madrid : Cátedra, 2005"
+          confianza: "alta"
+          evidencia: "Ediciones Cátedra / Madrid / 1.ª edición, 2005"
+          zona: "preliminares · página 5"
+        isbd_area_6:
+          valor: "(Letras Hispánicas)"
+          confianza: "alta"
+          evidencia: "Letras Hispánicas"
+          zona: "preliminares · página 4"
+        isbd_area_7:
+          valor: "Bibliografía"
+          confianza: "media"
+          evidencia: "BIBLIOGRAFÍA"
+          zona: "preliminares · página 4"
+        isbd_area_8:
+          valor: "ISBN 84-376-2238-7\nD.L. M-17691-2005"
+          confianza: "alta"
+          evidencia: "I.S.B.N.: 84-376-2238-7 / Depósito legal: M. 17.691-2005"
+          zona: "preliminares · página 5"
 
   - descripcion: >
-      "Esperado pero no encontrado": se aporta portada y verso, pero no consta
-      ni mención de edición ni depósito legal. Esos campos van a null con
-      confianza null; no se rellenan por inferencia. El dato de una solapa
-      publicitaria no se usa como dato principal.
+      Caso La maga de la montaña. DOS OBRAS del MISMO autor en un volumen:
+      títulos separados por espacio-punto y coma-espacio en el Área 1.
+      Serie con número: "(Serie ; 26)". Ilustraciones en color visibles.
     texto: |
       ########## ZONA: PRELIMINARES (cubierta, portada, verso de portada, índice) ##########
 
-      ===== preliminares · página 5 de 320 =====
-      EL JARDÍN INTERMITENTE
-      Lucía Ferrán
-      Madrid
-      Editorial Lumbre
+      ===== preliminares · página 4 de 8 =====
+      WALTER SCOTT
 
-      ===== preliminares · página 6 de 320 =====
-      © Lucía Ferrán, 2020
-      © Editorial Lumbre, 2020
-      ISBN 978-84-9000-111-4
-      Reservados todos los derechos
+      LA MAGA
+      DE LA MONTAÑA
+      LOS DESPOSORIOS
+      DE TRIERMAIN
 
-      ########## ZONA: FINALES (colofón, depósito legal, datos de impresión) ##########
+      ===== preliminares · página 5 de 8 =====
+      © Edita
+      S.A. de Promociones y Ediciones
+      Club Internacional del Libro
+      Londres, 49. Madrid-28
 
-      ===== finales · página 318 de 320 =====
-      De próxima aparición en esta editorial:
-      "La estación de las grullas", de Lucía Ferrán
-      Premio Nacional de Narrativa
+      ISBN. 84-7461-256-X
+      Depósito Legal: M. 30.222-1983
+
+      ===== preliminares · página 6 de 8 =====
+      GRANDES GENIOS
+      DE LA LITERATURA UNIVERSAL
+      VOLUMEN 26
+
+      WALTER SCOTT
     salida:
       campos:
         isbn:
-          valor: ["978-84-9000-111-4"]
+          valor: ["84-7461-256-X"]
           confianza: "alta"
-          evidencia: "ISBN 978-84-9000-111-4"
-          zona: "preliminares · página 6"
+          evidencia: "ISBN. 84-7461-256-X"
+          zona: "preliminares · página 5"
         deposito_legal:
-          valor: null
-          confianza: null
-          evidencia: null
+          valor: "M-30222-1983"
+          confianza: "alta"
+          evidencia: "Depósito Legal: M. 30.222-1983"
+          zona: "preliminares · página 5"
+        titulo_principal:
+          valor: "La maga de la montaña ; Los desposorios de Triermain"
+          confianza: "alta"
+          evidencia: "LA MAGA DE LA MONTAÑA / LOS DESPOSORIOS DE TRIERMAIN"
+          zona: "preliminares · página 4"
+        mencion_responsabilidad:
+          valor: "Walter Scott"
+          confianza: "alta"
+          evidencia: "WALTER SCOTT"
+          zona: "preliminares · página 4"
+        lugar_publicacion:
+          valor: "Madrid"
+          confianza: "alta"
+          evidencia: "Londres, 49. Madrid-28"
+          zona: "preliminares · página 5"
+        editor:
+          valor: "Club Internacional del Libro"
+          confianza: "alta"
+          evidencia: "Club Internacional del Libro"
+          zona: "preliminares · página 5"
+        fecha_publicacion:
+          valor: "1983"
+          confianza: "alta"
+          evidencia: "Depósito Legal: M. 30.222-1983"
+          zona: "preliminares · página 5"
+        serie_transcrita:
+          valor: "Grandes genios de la literatura universal ; 26"
+          confianza: "alta"
+          evidencia: "GRANDES GENIOS DE LA LITERATURA UNIVERSAL / VOLUMEN 26"
+          zona: "preliminares · página 6"
+        isbd_area_0:
+          valor: "Texto (visual) : sin mediación"
+          confianza: "alta"
+          evidencia: "convención"
           zona: null
+        isbd_area_1:
+          valor: "La maga de la montaña ; Los desposorios de Triermain / Walter Scott"
+          confianza: "alta"
+          evidencia: "LA MAGA DE LA MONTAÑA / LOS DESPOSORIOS DE TRIERMAIN / WALTER SCOTT"
+          zona: "preliminares · página 4"
+        isbd_area_4:
+          valor: "Madrid : Club Internacional del Libro, D.L. 1983"
+          confianza: "alta"
+          evidencia: "Club Internacional del Libro / Madrid / Depósito Legal: M. 30.222-1983"
+          zona: "preliminares · página 5"
+        isbd_area_5:
+          valor: "262 p. : il. col. ; 23 cm."
+          confianza: "media"
+          evidencia: "observación del ejemplar"
+          zona: null
+        isbd_area_6:
+          valor: "(Grandes genios de la literatura universal ; 26)"
+          confianza: "alta"
+          evidencia: "GRANDES GENIOS DE LA LITERATURA UNIVERSAL / VOLUMEN 26"
+          zona: "preliminares · página 6"
+        isbd_area_8:
+          valor: "ISBN 84-7461-256-X\nD.L. M-30222-1983"
+          confianza: "alta"
+          evidencia: "ISBN. 84-7461-256-X / Depósito Legal: M. 30.222-1983"
+          zona: "preliminares · página 5"
+
+  - descripcion: >
+      Caso El caso del testigo airado. TRES OBRAS del mismo autor con
+      distintos traductores. VARIOS ISBN cada uno con su coletilla, que se
+      conservan tal cual en el Área 8. Idioma de la edición vs. original.
+    texto: |
+      ########## ZONA: PRELIMINARES (cubierta, portada, verso de portada, índice) ##########
+
+      ===== preliminares · página 4 de 8 =====
+      ERLE STANLEY GARDNER
+
+      EL CASO DEL TESTIGO AIRADO
+      EL CASO DEL TARTAMUDO
+      EL CASO DEL TUTOR APURADO
+
+      EDICIONES ORBIS, S.A.
+
+      ===== preliminares · página 5 de 8 =====
+      Títulos originales y traductores:
+      THE CASE OF THE IRATE WITNESS (Traducción de: Ramón Margalef)
+      THE CASE OF THE STUTTERING BISHOP (Traducción de: J. M. F.)
+      THE CASE OF THE TROUBLED TRUSTEE (Traducción de: M. Giménez)
+
+      © 1953 by Crowell Collier Pub. Com. for The Case of the Irate Witness
+      © Editorial Molino
+      © Por la presente edición, Ediciones Orbis, S.A., 1985
+      Apartado de Correos 35432, Barcelona
+
+      ISBN: 84-7530-375-7 (Grandes maestros del crimen y misterio)
+      ISBN: 84-7530-624-1 (Obras completas de Erle Stanley Gardner)
+      ISBN: 84-7634-059-3 (Volumen 85)
+      D.L.B. 20206-1984
+
+      Printed in Spain
+    salida:
+      campos:
+        isbn:
+          valor:
+            - "84-7530-375-7 (Grandes maestros del crimen y misterio)"
+            - "84-7530-624-1 (Obras completas de Erle Stanley Gardner)"
+            - "84-7634-059-3 (Volumen 85)"
+          confianza: "alta"
+          evidencia: "ISBN: 84-7530-375-7 / 84-7530-624-1 / 84-7634-059-3"
+          zona: "preliminares · página 5"
+        deposito_legal:
+          valor: "B-20206-1984"
+          confianza: "alta"
+          evidencia: "D.L.B. 20206-1984"
+          zona: "preliminares · página 5"
         lengua_texto:
           valor: "español"
           confianza: "media"
-          evidencia: "Madrid / Editorial Lumbre"
+          evidencia: "Traducción de: Ramón Margalef"
           zona: "preliminares · página 5"
         idioma_original:
-          valor: null
-          confianza: null
-          evidencia: null
-          zona: null
+          valor: "inglés"
+          confianza: "alta"
+          evidencia: "Títulos originales: THE CASE OF THE IRATE WITNESS"
+          zona: "preliminares · página 5"
         titulo_principal:
-          valor: "El jardín intermitente"
+          valor: "El caso del testigo airado ; El caso del tartamudo ; El caso del tutor apurado"
           confianza: "alta"
-          evidencia: "EL JARDÍN INTERMITENTE"
-          zona: "preliminares · página 5"
-        subtitulo:
-          valor: null
-          confianza: null
-          evidencia: null
-          zona: null
+          evidencia: "EL CASO DEL TESTIGO AIRADO / EL CASO DEL TARTAMUDO / EL CASO DEL TUTOR APURADO"
+          zona: "preliminares · página 4"
         mencion_responsabilidad:
-          valor: "Lucía Ferrán"
+          valor: "Erle Stanley Gardner"
           confianza: "alta"
-          evidencia: "Lucía Ferrán"
-          zona: "preliminares · página 5"
+          evidencia: "ERLE STANLEY GARDNER"
+          zona: "preliminares · página 4"
         titulo_original:
+          valor: "The case of the irate witness"
+          confianza: "alta"
+          evidencia: "Títulos originales: THE CASE OF THE IRATE WITNESS"
+          zona: "preliminares · página 5"
+        lugar_publicacion:
+          valor: "Barcelona"
+          confianza: "alta"
+          evidencia: "Ediciones Orbis, S.A. / Barcelona"
+          zona: "preliminares · página 5"
+        editor:
+          valor: "Orbis"
+          confianza: "alta"
+          evidencia: "Ediciones Orbis, S.A."
+          zona: "preliminares · página 5"
+        fecha_publicacion:
+          valor: "1984"
+          confianza: "alta"
+          evidencia: "D.L.B. 20206-1984"
+          zona: "preliminares · página 5"
+        fecha_copyright:
+          valor: "1985"
+          confianza: "alta"
+          evidencia: "© Por la presente edición, Ediciones Orbis, S.A., 1985"
+          zona: "preliminares · página 5"
+        serie_transcrita:
+          valor: "Obras completas de Erle Stanley Gardner"
+          confianza: "alta"
+          evidencia: "Obras completas de Erle Stanley Gardner"
+          zona: "preliminares · página 5"
+        nota_lengua:
+          valor: "Traducción del inglés"
+          confianza: "alta"
+          evidencia: "Títulos originales y traductores"
+          zona: "preliminares · página 5"
+        isbd_area_0:
+          valor: "Texto (visual) : sin mediación"
+          confianza: "alta"
+          evidencia: "convención"
+          zona: null
+        isbd_area_1:
+          valor: "El caso del testigo airado ; El caso del tartamudo ; El caso del tutor apurado / Erle Stanley Gardner"
+          confianza: "alta"
+          evidencia: "EL CASO DEL TESTIGO AIRADO / EL CASO DEL TARTAMUDO / EL CASO DEL TUTOR APURADO / ERLE STANLEY GARDNER"
+          zona: "preliminares · página 4"
+        isbd_area_4:
+          valor: "Barcelona : Orbis, D.L. 1984"
+          confianza: "alta"
+          evidencia: "Ediciones Orbis / Barcelona / D.L.B. 20206-1984"
+          zona: "preliminares · página 5"
+        isbd_area_5:
+          valor: "389 p. : il. ; 18 cm."
+          confianza: "media"
+          evidencia: "observación del ejemplar"
+          zona: null
+        isbd_area_6:
+          valor: "(Obras completas de Erle Stanley Gardner)"
+          confianza: "alta"
+          evidencia: "Obras completas de Erle Stanley Gardner"
+          zona: "preliminares · página 5"
+        isbd_area_7:
+          valor: "Traducción del inglés"
+          confianza: "alta"
+          evidencia: "Títulos originales y traductores: Ramón Margalef, J. M. F., M. Giménez"
+          zona: "preliminares · página 5"
+        isbd_area_8:
+          valor: "ISBN 84-7530-375-7 (Grandes maestros del crimen y misterio)\nISBN 84-7530-624-1 (Obras completas de Erle Stanley Gardner)\nISBN 84-7634-059-3 (Volumen 85)\nD.L. B-20206-1984"
+          confianza: "alta"
+          evidencia: "ISBN: 84-7530-375-7 / 84-7530-624-1 / 84-7634-059-3 / D.L.B. 20206-1984"
+          zona: "preliminares · página 5"
+
+  - descripcion: >
+      Caso De los nombres de Cristo. Autor + editor literario separados por
+      ";" en la mención de responsabilidad. "SEGUNDA EDICIÓN" sí es Área 2.
+    texto: |
+      ########## ZONA: PRELIMINARES (cubierta, portada, verso de portada, índice) ##########
+
+      ===== preliminares · página 4 de 10 =====
+      Fray Luis de León
+
+      De los nombres
+      de Cristo
+
+      Edición de
+      Cristóbal Cuevas García
+
+      SEGUNDA EDICIÓN
+
+      EDICIONES CÁTEDRA, S.A., MADRID
+
+      ===== preliminares · página 5 de 10 =====
+      © Ediciones Cátedra, S.A., 1980
+      Don Ramón de la Cruz, 67. Madrid-1
+      Depósito legal: M. 19.991-1980
+      ISBN: 84-376-0111-8
+      Printed in Spain
+    salida:
+      campos:
+        isbn:
+          valor: ["84-376-0111-8"]
+          confianza: "alta"
+          evidencia: "ISBN: 84-376-0111-8"
+          zona: "preliminares · página 5"
+        deposito_legal:
+          valor: "M-19991-1980"
+          confianza: "alta"
+          evidencia: "Depósito legal: M. 19.991-1980"
+          zona: "preliminares · página 5"
+        titulo_principal:
+          valor: "De los nombres de Cristo"
+          confianza: "alta"
+          evidencia: "De los nombres de Cristo"
+          zona: "preliminares · página 4"
+        mencion_responsabilidad:
+          valor: "Fray Luis de León ; edición de Cristóbal Cuevas García"
+          confianza: "alta"
+          evidencia: "Fray Luis de León / Edición de Cristóbal Cuevas García"
+          zona: "preliminares · página 4"
+        mencion_edicion:
+          valor: "2ª ed."
+          confianza: "alta"
+          evidencia: "SEGUNDA EDICIÓN"
+          zona: "preliminares · página 4"
+        lugar_publicacion:
+          valor: "Madrid"
+          confianza: "alta"
+          evidencia: "EDICIONES CÁTEDRA, S.A., MADRID"
+          zona: "preliminares · página 4"
+        editor:
+          valor: "Cátedra"
+          confianza: "alta"
+          evidencia: "EDICIONES CÁTEDRA, S.A."
+          zona: "preliminares · página 4"
+        fecha_publicacion:
+          valor: "1980"
+          confianza: "alta"
+          evidencia: "© Ediciones Cátedra, S.A., 1980"
+          zona: "preliminares · página 5"
+        serie_transcrita:
+          valor: "Letras Hispánicas ; 59"
+          confianza: "alta"
+          evidencia: "Letras Hispánicas"
+          zona: "preliminares · página 4"
+        nota_bibliografia:
+          valor: "Bibliografía"
+          confianza: "media"
+          evidencia: "BIBLIOGRAFÍA SELECTA"
+          zona: "preliminares · página 4"
+        isbd_area_0:
+          valor: "Texto (visual) : sin mediación"
+          confianza: "alta"
+          evidencia: "convención"
+          zona: null
+        isbd_area_1:
+          valor: "De los nombres de Cristo / Fray Luis de León ; edición de Cristóbal Cuevas García"
+          confianza: "alta"
+          evidencia: "De los nombres de Cristo / Fray Luis de León / Edición de Cristóbal Cuevas García"
+          zona: "preliminares · página 4"
+        isbd_area_2:
+          valor: "2ª ed."
+          confianza: "alta"
+          evidencia: "SEGUNDA EDICIÓN"
+          zona: "preliminares · página 4"
+        isbd_area_4:
+          valor: "Madrid : Cátedra, 1980"
+          confianza: "alta"
+          evidencia: "EDICIONES CÁTEDRA, S.A., MADRID / © 1980"
+          zona: "preliminares · página 4"
+        isbd_area_6:
+          valor: "(Letras Hispánicas ; 59)"
+          confianza: "alta"
+          evidencia: "Letras Hispánicas"
+          zona: "preliminares · página 4"
+        isbd_area_7:
+          valor: "Bibliografía"
+          confianza: "media"
+          evidencia: "BIBLIOGRAFÍA SELECTA"
+          zona: "preliminares · página 4"
+        isbd_area_8:
+          valor: "ISBN 84-376-0111-8\nD.L. M-19991-1980"
+          confianza: "alta"
+          evidencia: "ISBN: 84-376-0111-8 / Depósito legal: M. 19.991-1980"
+          zona: "preliminares · página 5"
+
+  - descripcion: >
+      Caso Historia de la vida del Buscón. Título extenso con subtítulo en
+      portada. Series anidadas (sección/subsección).
+    texto: |
+      ########## ZONA: PRELIMINARES (cubierta, portada, verso de portada, índice) ##########
+
+      ===== preliminares · página 4 de 10 =====
+      FRANCISCO DE QUEVEDO Y VILLEGAS
+
+      HISTORIA DE LA VIDA DEL BUSCÓN
+      LLAMADO DON PABLOS,
+      EJEMPLO DE VAGABUNDOS Y ESPEJO DE TACAÑOS
+
+      Introducción y notas:
+      FÉLIX HERRERO SALGADO
+
+      NOVELAS Y CUENTOS
+      E.M.E.S.A. - MADRID - 14
+
+      ===== preliminares · página 5 de 10 =====
+      Colección Novelas y Cuentos
+      Fundada en 1929 por José N. de Urgoiti
+
+      Segunda época
+      Director: Juan Gutiérrez Palacio
+      Edición: Editorial Magisterio Español, S.A.
+
+      Copyright © 1967 by EDITORIAL MAGISTERIO ESPAÑOL, S.A.
+      Depósito legal: M. 17.425 - 1967
+      Printed in Spain
+
+      SECCIÓN LITERATURA
+      Serie Literatura española
+      Clásicos. Siglo XVII
+    salida:
+      campos:
+        isbn:
           valor: null
           confianza: null
           evidencia: null
           zona: null
+        deposito_legal:
+          valor: "M-17425-1967"
+          confianza: "alta"
+          evidencia: "Depósito legal: M. 17.425 - 1967"
+          zona: "preliminares · página 5"
+        titulo_principal:
+          valor: "Historia de la vida del buscón llamado don Pablos"
+          confianza: "alta"
+          evidencia: "HISTORIA DE LA VIDA DEL BUSCÓN LLAMADO DON PABLOS"
+          zona: "preliminares · página 4"
+        subtitulo:
+          valor: "ejemplo de vagabundos y espejo de tacaños"
+          confianza: "alta"
+          evidencia: "EJEMPLO DE VAGABUNDOS Y ESPEJO DE TACAÑOS"
+          zona: "preliminares · página 4"
+        mencion_responsabilidad:
+          valor: "Francisco de Quevedo y Villegas ; introducción y notas Félix Herrero Salgado"
+          confianza: "alta"
+          evidencia: "FRANCISCO DE QUEVEDO Y VILLEGAS / Introducción y notas: FÉLIX HERRERO SALGADO"
+          zona: "preliminares · página 4"
+        lugar_publicacion:
+          valor: "Madrid"
+          confianza: "alta"
+          evidencia: "E.M.E.S.A. - MADRID - 14"
+          zona: "preliminares · página 4"
+        editor:
+          valor: "EMESA"
+          confianza: "alta"
+          evidencia: "E.M.E.S.A."
+          zona: "preliminares · página 4"
+        fecha_publicacion:
+          valor: "1967"
+          confianza: "alta"
+          evidencia: "Depósito legal: M. 17.425 - 1967"
+          zona: "preliminares · página 5"
+        serie_transcrita:
+          valor: "Novelas y cuentos . Sección Literatura, Serie Literatura española, Clásicos. Siglo XVII"
+          confianza: "media"
+          evidencia: "Colección Novelas y Cuentos / SECCIÓN LITERATURA / Serie Literatura española"
+          zona: "preliminares · página 5"
+        isbd_area_0:
+          valor: "Texto (visual) : sin mediación"
+          confianza: "alta"
+          evidencia: "convención"
+          zona: null
+        isbd_area_1:
+          valor: "Historia de la vida del buscón llamado don Pablos, ejemplo de vagabundos y espejo de tacaños / Francisco de Quevedo y Villegas ; introducción y notas Félix Herrero Salgado"
+          confianza: "alta"
+          evidencia: "HISTORIA DE LA VIDA DEL BUSCÓN... / FRANCISCO DE QUEVEDO Y VILLEGAS"
+          zona: "preliminares · página 4"
+        isbd_area_4:
+          valor: "Madrid : EMESA, D.L. 1967"
+          confianza: "alta"
+          evidencia: "E.M.E.S.A. - MADRID / Depósito legal: M. 17.425 - 1967"
+          zona: "preliminares · página 4"
+        isbd_area_5:
+          valor: "230 p. : il. ; 18 cm."
+          confianza: "media"
+          evidencia: "observación del ejemplar"
+          zona: null
+        isbd_area_6:
+          valor: "(Novelas y cuentos ; 10 . Sección Literatura, Serie Literatura española, Clásicos. Siglo XVII)"
+          confianza: "media"
+          evidencia: "Colección Novelas y Cuentos / SECCIÓN LITERATURA / Serie Literatura española"
+          zona: "preliminares · página 5"
+        isbd_area_8:
+          valor: "D.L. M-17425-1967"
+          confianza: "alta"
+          evidencia: "Depósito legal: M. 17.425 - 1967"
+          zona: "preliminares · página 5"
+
+  - descripcion: >
+      Caso Lazarillo de Tormes. Obra ANÓNIMA: la palabra "Anónimo" SÍ puede
+      figurar como mención de responsabilidad del Área 1.
+    texto: |
+      ########## ZONA: PRELIMINARES (cubierta, portada, verso de portada, índice) ##########
+
+      ===== preliminares · página 4 de 8 =====
+      Lazarillo
+      de Tormes
+
+      Anónimo
+
+      EL PAÍS · CLÁSICOS ESPAÑOLES
+
+      ===== preliminares · página 5 de 8 =====
+      © Santillana Ediciones Generales, S.L.
+      © De esta edición:
+      2004, Diario EL PAÍS, S.L.
+      Miguel Yuste, 40
+      28037 Madrid
+
+      ISBN: 84-96390-99-3
+      Depósito legal: B-563-2005
+      Impreso en España por Litografía Roses, S.A., Gavà (Barcelona)
+    salida:
+      campos:
+        isbn:
+          valor: ["84-96390-99-3"]
+          confianza: "alta"
+          evidencia: "ISBN: 84-96390-99-3"
+          zona: "preliminares · página 5"
+        deposito_legal:
+          valor: "B-563-2005"
+          confianza: "alta"
+          evidencia: "Depósito legal: B-563-2005"
+          zona: "preliminares · página 5"
+        titulo_principal:
+          valor: "Lazarillo de Tormes"
+          confianza: "alta"
+          evidencia: "Lazarillo de Tormes"
+          zona: "preliminares · página 4"
+        mencion_responsabilidad:
+          valor: "Anónimo"
+          confianza: "alta"
+          evidencia: "Anónimo"
+          zona: "preliminares · página 4"
+        lugar_publicacion:
+          valor: "Madrid"
+          confianza: "alta"
+          evidencia: "Diario EL PAÍS, S.L. / 28037 Madrid"
+          zona: "preliminares · página 5"
+        editor:
+          valor: "Diario El País"
+          confianza: "alta"
+          evidencia: "Diario EL PAÍS, S.L."
+          zona: "preliminares · página 5"
+        fecha_publicacion:
+          valor: "2005"
+          confianza: "alta"
+          evidencia: "Depósito legal: B-563-2005"
+          zona: "preliminares · página 5"
+        serie_transcrita:
+          valor: "Clásicos españoles ; 10"
+          confianza: "alta"
+          evidencia: "EL PAÍS · CLÁSICOS ESPAÑOLES"
+          zona: "preliminares · página 4"
+        isbd_area_0:
+          valor: "Texto (visual) : sin mediación"
+          confianza: "alta"
+          evidencia: "convención"
+          zona: null
+        isbd_area_1:
+          valor: "Lazarillo de Tormes / Anónimo"
+          confianza: "alta"
+          evidencia: "Lazarillo de Tormes / Anónimo"
+          zona: "preliminares · página 4"
+        isbd_area_4:
+          valor: "Madrid : Diario El País, D.L. 2005"
+          confianza: "alta"
+          evidencia: "Diario EL PAÍS, S.L. / Madrid / Depósito legal: B-563-2005"
+          zona: "preliminares · página 5"
+        isbd_area_5:
+          valor: "148 p. : il. ; 18 cm."
+          confianza: "media"
+          evidencia: "observación del ejemplar"
+          zona: null
+        isbd_area_6:
+          valor: "(Clásicos españoles ; 10)"
+          confianza: "alta"
+          evidencia: "EL PAÍS · CLÁSICOS ESPAÑOLES"
+          zona: "preliminares · página 4"
+        isbd_area_8:
+          valor: "ISBN 84-96390-99-3\nD.L. B-563-2005"
+          confianza: "alta"
+          evidencia: "ISBN: 84-96390-99-3 / Depósito legal: B-563-2005"
+          zona: "preliminares · página 5"
+
+  - descripcion: >
+      Caso El desván de los machos. Dos obras del mismo autor. La
+      ilustración de cubierta (José Hernández) NO se añade como nota.
+    texto: |
+      ########## ZONA: PRELIMINARES (cubierta, portada, verso de portada, índice) ##########
+
+      ===== preliminares · página 4 de 8 =====
+      Letras Hispánicas
+
+      Luis Riaza
+
+      El desván de los machos
+      y el sótano de las hembras
+      ---
+      El palacio de los monos
+
+      Edición de
+      Alberto Castilla y del autor
+
+      SEGUNDA EDICIÓN
+
+      EDICIONES CÁTEDRA, S.A., MADRID
+
+      ===== preliminares · página 5 de 8 =====
+      Ilustración de cubierta:
+      Detalle de La anunciada, de José Hernández
+
+      © Luis Riaza
+      Ediciones Cátedra, S.A., 1982
+      Don Ramón de la Cruz, 67. Madrid-1
+      Depósito legal: M. 20.969-1982
+      ISBN: 84-376-0164-9
+      Printed in Spain
+    salida:
+      campos:
+        isbn:
+          valor: ["84-376-0164-9"]
+          confianza: "alta"
+          evidencia: "ISBN: 84-376-0164-9"
+          zona: "preliminares · página 5"
+        deposito_legal:
+          valor: "M-20969-1982"
+          confianza: "alta"
+          evidencia: "Depósito legal: M. 20.969-1982"
+          zona: "preliminares · página 5"
+        titulo_principal:
+          valor: "El desván de los machos y el sótano de las hembras ; El palacio de los monos"
+          confianza: "alta"
+          evidencia: "El desván de los machos y el sótano de las hembras / El palacio de los monos"
+          zona: "preliminares · página 4"
+        mencion_responsabilidad:
+          valor: "Luis Riaza ; edición de Alberto Castilla y del autor"
+          confianza: "alta"
+          evidencia: "Luis Riaza / Edición de Alberto Castilla y del autor"
+          zona: "preliminares · página 4"
+        mencion_edicion:
+          valor: "2ª ed."
+          confianza: "alta"
+          evidencia: "SEGUNDA EDICIÓN"
+          zona: "preliminares · página 4"
+        lugar_publicacion:
+          valor: "Madrid"
+          confianza: "alta"
+          evidencia: "EDICIONES CÁTEDRA, S.A., MADRID"
+          zona: "preliminares · página 4"
+        editor:
+          valor: "Cátedra"
+          confianza: "alta"
+          evidencia: "EDICIONES CÁTEDRA, S.A."
+          zona: "preliminares · página 4"
+        fecha_publicacion:
+          valor: "1982"
+          confianza: "alta"
+          evidencia: "Ediciones Cátedra, S.A., 1982"
+          zona: "preliminares · página 5"
+        serie_transcrita:
+          valor: "Letras Hispánicas ; 93"
+          confianza: "alta"
+          evidencia: "Letras Hispánicas"
+          zona: "preliminares · página 4"
+        nota_bibliografia:
+          valor: "Bibliografía: p. 119-121"
+          confianza: "media"
+          evidencia: "BIBLIOGRAFÍA"
+          zona: "preliminares · página 4"
+        isbd_area_0:
+          valor: "Texto (visual) : sin mediación"
+          confianza: "alta"
+          evidencia: "convención"
+          zona: null
+        isbd_area_1:
+          valor: "El desván de los machos y el sótano de las hembras ; El palacio de los monos / Luis Riaza ; edición de Alberto Castilla y del autor"
+          confianza: "alta"
+          evidencia: "El desván de los machos y el sótano de las hembras / El palacio de los monos / Luis Riaza"
+          zona: "preliminares · página 4"
+        isbd_area_2:
+          valor: "2ª ed."
+          confianza: "alta"
+          evidencia: "SEGUNDA EDICIÓN"
+          zona: "preliminares · página 4"
+        isbd_area_4:
+          valor: "Madrid : Cátedra, D.L. 1982"
+          confianza: "alta"
+          evidencia: "EDICIONES CÁTEDRA / Madrid / Depósito legal: M. 20.969-1982"
+          zona: "preliminares · página 4"
+        isbd_area_5:
+          valor: "319 p. : il. ; 18 cm."
+          confianza: "media"
+          evidencia: "observación del ejemplar"
+          zona: null
+        isbd_area_6:
+          valor: "(Letras Hispánicas ; 93)"
+          confianza: "alta"
+          evidencia: "Letras Hispánicas"
+          zona: "preliminares · página 4"
+        isbd_area_7:
+          valor: "Bibliografía: p. 119-121"
+          confianza: "media"
+          evidencia: "BIBLIOGRAFÍA"
+          zona: "preliminares · página 4"
+        isbd_area_8:
+          valor: "ISBN 84-376-0164-9\nD.L. M-20969-1982"
+          confianza: "alta"
+          evidencia: "ISBN: 84-376-0164-9 / Depósito legal: M. 20.969-1982"
+          zona: "preliminares · página 5"
+
+  - descripcion: >
+      Caso Historia de la transición. "(eds.)" es mención de responsabilidad
+      del Área 1, NO mención de edición. Nota sobre colaboración del Senado.
+      El alcance temporal "(1975-1986)" va con el título.
+    texto: |
+      ########## ZONA: PRELIMINARES (cubierta, portada, verso de portada, índice) ##########
+
+      ===== preliminares · página 4 de 10 =====
+      Alianza Universidad
+
+      Javier Tusell
+      y Álvaro Soto (eds.)
+
+      Historia de la transición
+      (1975-1986)
+
+      Alianza
+      Editorial
+
+      ===== preliminares · página 5 de 10 =====
+      Primera edición en «Alianza Universidad»: 1996 (octubre)
+      Primera reimpresión en «Alianza Universidad»: 1996 (diciembre)
+
+      El Senado ha colaborado en la edición de esta obra.
+
+      © Javier Tusell y Álvaro Soto
+      © Ed. cast.: Alianza Editorial, S.A., Madrid, 1996
+      ISBN: 84-206-2862-X
+      Depósito legal: M. 44.038-1996
+      Printed in Spain
+    salida:
+      campos:
+        isbn:
+          valor: ["84-206-2862-X"]
+          confianza: "alta"
+          evidencia: "ISBN: 84-206-2862-X"
+          zona: "preliminares · página 5"
+        deposito_legal:
+          valor: "M-44038-1996"
+          confianza: "alta"
+          evidencia: "Depósito legal: M. 44.038-1996"
+          zona: "preliminares · página 5"
+        titulo_principal:
+          valor: "Historia de la transición (1975-1986)"
+          confianza: "alta"
+          evidencia: "Historia de la transición (1975-1986)"
+          zona: "preliminares · página 4"
+        mencion_responsabilidad:
+          valor: "Javier Tusell y Álvaro Soto (eds.)"
+          confianza: "alta"
+          evidencia: "Javier Tusell y Álvaro Soto (eds.)"
+          zona: "preliminares · página 4"
         mencion_edicion:
           valor: null
           confianza: null
@@ -294,25 +1020,174 @@ ejemplos:
         lugar_publicacion:
           valor: "Madrid"
           confianza: "alta"
-          evidencia: "Madrid"
+          evidencia: "Alianza Editorial, S.A., Madrid, 1996"
           zona: "preliminares · página 5"
         editor:
-          valor: "Editorial Lumbre"
+          valor: "Alianza"
           confianza: "alta"
-          evidencia: "Editorial Lumbre"
-          zona: "preliminares · página 5"
+          evidencia: "Alianza Editorial"
+          zona: "preliminares · página 4"
         fecha_publicacion:
-          valor: "2020"
-          confianza: "media"
-          evidencia: "© Editorial Lumbre, 2020"
-          zona: "preliminares · página 6"
-        fecha_copyright:
-          valor: "2020"
+          valor: "1996"
           confianza: "alta"
-          evidencia: "© Lucía Ferrán, 2020"
-          zona: "preliminares · página 6"
+          evidencia: "Alianza Editorial, S.A., Madrid, 1996"
+          zona: "preliminares · página 5"
+        serie_transcrita:
+          valor: "Alianza Universidad ; 862"
+          confianza: "media"
+          evidencia: "Alianza Universidad"
+          zona: "preliminares · página 4"
         nota_general:
+          valor: "El Senado ha colaborado en la edición de esta obra"
+          confianza: "alta"
+          evidencia: "El Senado ha colaborado en la edición de esta obra"
+          zona: "preliminares · página 5"
+        isbd_area_0:
+          valor: "Texto (visual) : sin mediación"
+          confianza: "alta"
+          evidencia: "convención"
+          zona: null
+        isbd_area_1:
+          valor: "Historia de la transición (1975-1986) / Javier Tusell y Álvaro Soto (eds.)"
+          confianza: "alta"
+          evidencia: "Historia de la transición (1975-1986) / Javier Tusell y Álvaro Soto (eds.)"
+          zona: "preliminares · página 4"
+        isbd_area_2:
           valor: null
           confianza: null
           evidencia: null
           zona: null
+        isbd_area_4:
+          valor: "Madrid : Alianza, 1996"
+          confianza: "alta"
+          evidencia: "Alianza Editorial / Madrid / 1996"
+          zona: "preliminares · página 5"
+        isbd_area_5:
+          valor: "504 p. ; 20 cm."
+          confianza: "media"
+          evidencia: "observación del ejemplar"
+          zona: null
+        isbd_area_6:
+          valor: "(Alianza Universidad ; 862)"
+          confianza: "media"
+          evidencia: "Alianza Universidad"
+          zona: "preliminares · página 4"
+        isbd_area_7:
+          valor: "El Senado ha colaborado en la edición de esta obra"
+          confianza: "alta"
+          evidencia: "El Senado ha colaborado en la edición de esta obra"
+          zona: "preliminares · página 5"
+        isbd_area_8:
+          valor: "ISBN 84-206-2862-X\nD.L. M-44038-1996"
+          confianza: "alta"
+          evidencia: "ISBN: 84-206-2862-X / Depósito legal: M. 44.038-1996"
+          zona: "preliminares · página 5"
+
+  - descripcion: >
+      Caso Actas de archivos aragoneses. ACTAS de congreso con nombre formal.
+      Editor INSTITUCIONAL (gobierno autonómico). El lugar (Zaragoza) se
+      infiere del impresor y va entre corchetes. Subtítulo descriptivo.
+    texto: |
+      ########## ZONA: PRELIMINARES (cubierta, portada, verso de portada, índice) ##########
+
+      ===== preliminares · página 4 de 8 =====
+      Colección Actas, 27
+
+      ACTAS DE LAS V
+      JORNADAS DE
+      ARCHIVOS ARAGONESES
+
+      situación y perspectiva de los archivos de la administración
+      local, los archivos militares y los archivos policiales
+
+      GOBIERNO DE ARAGÓN
+      Departamento de Educación y Cultura
+
+      ===== preliminares · página 5 de 8 =====
+      Edita: Diputación General de Aragón
+      Departamento de Educación y Cultura
+
+      Coordinación y maquetación: José Luis Acín Fanlo
+
+      Impresión: INO Reproducciones, S.A.
+      Ctra. Castellón, km. 3,800, 50013 Zaragoza
+
+      I.S.B.N.: 84-7753-530-2
+      D.L.: Z-642-95
+    salida:
+      campos:
+        isbn:
+          valor: ["84-7753-530-2"]
+          confianza: "alta"
+          evidencia: "I.S.B.N.: 84-7753-530-2"
+          zona: "preliminares · página 5"
+        deposito_legal:
+          valor: "Z-642-1995"
+          confianza: "alta"
+          evidencia: "D.L.: Z-642-95"
+          zona: "preliminares · página 5"
+        titulo_principal:
+          valor: "Actas de las V Jornadas de Archivos Aragoneses"
+          confianza: "alta"
+          evidencia: "ACTAS DE LAS V JORNADAS DE ARCHIVOS ARAGONESES"
+          zona: "preliminares · página 4"
+        subtitulo:
+          valor: "situación y perspectiva de los archivos de la administración local, los archivos militares y los archivos policiales"
+          confianza: "alta"
+          evidencia: "situación y perspectiva de los archivos de la administración local"
+          zona: "preliminares · página 4"
+        mencion_responsabilidad:
+          valor: null
+          confianza: null
+          evidencia: null
+          zona: null
+        lugar_publicacion:
+          valor: "[Zaragoza]"
+          confianza: "media"
+          evidencia: "Ctra. Castellón, km. 3,800, 50013 Zaragoza"
+          zona: "preliminares · página 5"
+        editor:
+          valor: "Gobierno de Aragón, Departamento de Educación y Cultura"
+          confianza: "alta"
+          evidencia: "Edita: Diputación General de Aragón, Departamento de Educación y Cultura"
+          zona: "preliminares · página 5"
+        fecha_publicacion:
+          valor: "1995"
+          confianza: "alta"
+          evidencia: "D.L.: Z-642-95"
+          zona: "preliminares · página 5"
+        serie_transcrita:
+          valor: "Colección Actas ; 27"
+          confianza: "alta"
+          evidencia: "Colección Actas, 27"
+          zona: "preliminares · página 4"
+        isbd_area_0:
+          valor: "Texto (visual) : sin mediación"
+          confianza: "alta"
+          evidencia: "convención"
+          zona: null
+        isbd_area_1:
+          valor: "Actas de las V Jornadas de Archivos Aragoneses : situación y perspectiva de los archivos de la administración local, los archivos militares y los archivos policiales"
+          confianza: "alta"
+          evidencia: "ACTAS DE LAS V JORNADAS DE ARCHIVOS ARAGONESES / situación y perspectiva..."
+          zona: "preliminares · página 4"
+        isbd_area_4:
+          valor: "[Zaragoza] : Gobierno de Aragón, Departamento de Educación y Cultura, D.L. 1995"
+          confianza: "alta"
+          evidencia: "Edita: Diputación General de Aragón / Zaragoza / D.L.: Z-642-95"
+          zona: "preliminares · página 5"
+        isbd_area_5:
+          valor: "424 p. : il. ; 24 cm."
+          confianza: "media"
+          evidencia: "observación del ejemplar"
+          zona: null
+        isbd_area_6:
+          valor: "(Colección Actas ; 27)"
+          confianza: "alta"
+          evidencia: "Colección Actas, 27"
+          zona: "preliminares · página 4"
+        isbd_area_8:
+          valor: "ISBN 84-7753-530-2\nD.L. Z-642-1995"
+          confianza: "alta"
+          evidencia: "I.S.B.N.: 84-7753-530-2 / D.L.: Z-642-95"
+          zona: "preliminares · página 5"

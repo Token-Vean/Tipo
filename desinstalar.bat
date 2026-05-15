@@ -13,6 +13,16 @@ setlocal EnableDelayedExpansion
 
 cd /d "%~dp0"
 
+set "DOCKER=docker"
+where docker >nul 2>&1
+if errorlevel 1 (
+    if exist "%ProgramFiles%\Docker\Docker\resources\bin\docker.exe" (
+        set "DOCKER=%ProgramFiles%\Docker\Docker\resources\bin\docker.exe"
+    ) else if exist "%ProgramFiles(x86)%\Docker\Docker\resources\bin\docker.exe" (
+        set "DOCKER=%ProgramFiles(x86)%\Docker\Docker\resources\bin\docker.exe"
+    )
+)
+
 REM Recuperar perfil del .env
 set PERFIL=bundled,external
 if exist .env (
@@ -51,9 +61,9 @@ set COMPOSE_PROFILES=!PERFIL!
 
 echo.
 echo Eliminando contenedores y volumenes...
-docker compose down -v
+"!DOCKER!" compose down -v
 
-docker image rm tipo-app >nul 2>&1
+"!DOCKER!" image rm tipo-app >nul 2>&1
 
 echo.
 echo Desinstalacion completada.

@@ -2,9 +2,12 @@ from app import bibliografico
 from app.version import APP_NAME, APP_VERSION
 
 
+EXPECTED_MAJOR_MINOR = "0.2.0"
+
+
 def test_app_identity():
     assert APP_NAME == "Tipo"
-    assert APP_VERSION.startswith("0.1.2")
+    assert APP_VERSION.startswith(EXPECTED_MAJOR_MINOR)
 
 
 def test_isbn_validation():

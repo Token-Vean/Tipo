@@ -7,13 +7,16 @@
 # Ejecuta como usuario no privilegiado (uid 10001).
 #
 # Reproducibilidad:
-#   - Imagen base Python fijada por tag mayor.menor (3.12-slim).
+#   - Imagen base Python parametrizable mediante PYTHON_IMAGE.
+#   - En Windows, el instalador resuelve automáticamente python:3.12-slim
+#     a una referencia con digest y la escribe en .env antes del build.
 #   - Dependencias fijadas en requirements.txt (versión exacta).
 #   - Sin llamadas de red durante el runtime salvo a Ollama (ver
 #     CUMPLIMIENTO.md).
 # =============================================================================
 
-FROM python:3.12-slim AS builder
+ARG PYTHON_IMAGE=python:3.12-slim
+FROM ${PYTHON_IMAGE} AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -33,7 +36,8 @@ RUN pip install --prefix=/install -r requirements.txt
 # =============================================================================
 # Imagen final
 # =============================================================================
-FROM python:3.12-slim
+ARG PYTHON_IMAGE=python:3.12-slim
+FROM ${PYTHON_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -60,6 +64,13 @@ WORKDIR /app
 
 # Código de la aplicación
 COPY --chown=appuser:appgroup app /app/app
+
+# Directorio persistente para usuarios/sesiones locales.
+# Importante: si se monta como volumen Docker nombrado, Docker inicializa
+# el volumen con los permisos existentes en la imagen. Sin este directorio
+# el volumen podía quedar como root:root y bloquear la creación del usuario
+# administrador en el primer arranque.
+RUN mkdir -p /app/data && chown -R appuser:appgroup /app/data && chmod 700 /app/data
 
 USER appuser
 

@@ -26,15 +26,47 @@ from fastapi.responses import Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from . import auditoria, bibliografico, extractor, router as router_entrada
+from . import auditoria, bibliografico, extractor, llm, router as router_entrada
 from .router import ErrorValidacion
 from .local_access import exposicion_red_permitida
 from .version import APP_VERSION
 
 logger = logging.getLogger(__name__)
 
-MODELO = os.getenv("MODELO_NOMBRE", "tipo")
+MODELO = os.getenv("MODELO_NOMBRE", "gemma4:e4b")
 DIR_ESQUEMAS = Path(os.getenv("DIR_ESQUEMAS", "/app/schemas"))
+
+
+_MODELO_SEGURO_RE = re.compile(r"^[A-Za-z0-9._:/@+-]{1,160}$")
+
+
+def _sanear_modelo(nombre: str | None) -> str:
+    candidato = (nombre or MODELO).strip()
+    if not candidato or not _MODELO_SEGURO_RE.fullmatch(candidato):
+        raise HTTPException(400, "Nombre de modelo no válido.")
+    return candidato
+
+
+def _modelo_equivalente(nombre: str, modelos: list[str]) -> bool:
+    if nombre in modelos:
+        return True
+    if f"{nombre}:latest" in modelos:
+        return True
+    if ":" not in nombre and f"{nombre}:latest" in modelos:
+        return True
+    return False
+
+
+async def _validar_modelo_instalado(nombre: str) -> None:
+    try:
+        modelos = await llm.modelos_disponibles()
+    except Exception as exc:
+        logger.exception("No se pudo consultar la lista de modelos de Ollama")
+        raise HTTPException(503, "No se pudo consultar Ollama para validar los modelos disponibles.") from exc
+    if not _modelo_equivalente(nombre, modelos):
+        lista = ", ".join(modelos[:12]) if modelos else "ninguno"
+        raise HTTPException(400, f"El modelo '{nombre}' no está descargado en Ollama. Modelos disponibles: {lista}")
+
 
 MAX_DESCRIBIR_BODY_BYTES = int(os.getenv("MAX_DESCRIBIR_BODY_BYTES", str(router_entrada.TAMANO_MAXIMO_BYTES + 8 * 1024 * 1024)))
 MAX_EXPORT_BODY_BYTES = int(os.getenv("MAX_EXPORT_BODY_BYTES", str(15 * 1024 * 1024)))
@@ -59,9 +91,12 @@ PERFILES_DISPONIBLES = {
 }
 
 CAMPOS_ESENCIALES = {
-    "isbn", "titulo_principal", "subtitulo", "mencion_responsabilidad",
-    "mencion_edicion", "lugar_publicacion", "editor", "fecha_publicacion",
-    "extension", "dimensiones", "serie_transcrita",
+    "isbn", "deposito_legal", "titulo_principal", "subtitulo",
+    "mencion_responsabilidad", "mencion_edicion", "lugar_publicacion", "editor",
+    "fecha_publicacion", "extension", "dimensiones", "serie_transcrita",
+    # Bloques ISBD ensamblados por área (revisión humana directa)
+    "isbd_area_0", "isbd_area_1", "isbd_area_2", "isbd_area_4",
+    "isbd_area_5", "isbd_area_6", "isbd_area_7", "isbd_area_8",
 }
 
 
@@ -154,6 +189,11 @@ class CabecerasSeguridad(BaseHTTPMiddleware):
 
 
 def _log_peticion(evento: str, peticion_id: str, **kwargs: Any) -> None:
+    if kwargs.pop("_incognito", False):
+        # En modo incógnito solo dejamos constancia mínima del evento: sin
+        # detalles, sin nombre de archivos, sin contadores.
+        logger.info("[%s] %s (incognito)", peticion_id, evento)
+        return
     extras = " ".join(f"{k}={v}" for k, v in kwargs.items())
     logger.info("[%s] %s %s", peticion_id, evento, extras)
 
@@ -189,6 +229,47 @@ async def emitir_token_csrf():
 @router.get("/normas")
 async def listar_normas():
     return {"normas": [{"clave": clave, **datos} for clave, datos in PERFILES_DISPONIBLES.items()]}
+
+
+@router.get("/modelos")
+async def listar_modelos_ollama():
+    """Devuelve modelos descargados en el Ollama configurado.
+
+    La UI solo permite seleccionar modelos presentes en esta lista para evitar
+    envíos accidentales a un endpoint distinto o errores de descarga implícita.
+    Se devuelven metadatos enriquecidos y advertencias de capacidad.
+    """
+    try:
+        modelos_meta = await llm.modelos_disponibles(detallado=True)
+    except Exception as exc:
+        logger.exception("No se pudo listar modelos de Ollama")
+        raise HTTPException(503, "No se pudo consultar la lista de modelos de Ollama.") from exc
+    nombres = [m.get("name") for m in modelos_meta if isinstance(m, dict) and m.get("name")]
+    predeterminado = MODELO if _modelo_equivalente(MODELO, nombres) else (nombres[0] if nombres else MODELO)
+    for m in modelos_meta:
+        if isinstance(m, dict):
+            m["recommended"] = m.get("name") == predeterminado
+    return {
+        "modelo_predeterminado": predeterminado,
+        "modelos": nombres,
+        "modelos_detalle": modelos_meta,
+    }
+
+
+@router.get("/diagnostico")
+async def diagnostico_operativo(request: Request):
+    """Diagnóstico local sin datos documentales. Requiere sesión iniciada."""
+    return {
+        "version": APP_VERSION,
+        "local_only": not exposicion_red_permitida(),
+        "shutdown_ui_enabled": PERMITIR_APAGADO_UI,
+        "modelo_por_defecto": MODELO,
+        "max_archivos": MAX_ARCHIVOS_CONJUNTO,
+        "max_body_describir_bytes": MAX_DESCRIBIR_BODY_BYTES,
+        "procesamientos_simultaneos": MAX_PROCESAMIENTOS_SIMULTANEOS,
+        "cliente": request.client.host if request.client else "local",
+        "alcance_beta": "monografia_moderna_impresa",
+    }
 
 
 async def _apagar_proceso_app() -> None:
@@ -290,8 +371,11 @@ async def describir(
     modo: str = Form("esencial"),
     campos: str | None = Form(None),
     idioma_salida: str = Form("es"),
+    modelo: str | None = Form(None),
+    incognito: str = Form("0"),
 ):
     peticion_id = str(uuid.uuid4())[:8]
+    incognito_modo = str(incognito or "0").strip().lower() in {"1", "true", "si", "sí", "yes", "on"}
     if norma not in PERFILES_DISPONIBLES:
         raise HTTPException(400, f"Perfil desconocido: {norma}")
     if modo not in ("esencial", "completo", "personalizado"):
@@ -299,13 +383,15 @@ async def describir(
     idioma_salida = (idioma_salida or "es").strip().lower()
     if idioma_salida not in IDIOMAS_SALIDA_ADMITIDOS:
         raise HTTPException(400, f"Idioma de salida no admitido: {idioma_salida}")
+    modelo_seleccionado = _sanear_modelo(modelo)
+    await _validar_modelo_instalado(modelo_seleccionado)
     if not ficheros:
         raise HTTPException(400, "Debe subirse al menos una imagen o documento.")
     if len(ficheros) > MAX_ARCHIVOS_CONJUNTO:
         raise HTTPException(400, f"Demasiados archivos: máximo {MAX_ARCHIVOS_CONJUNTO}.")
     etiquetas_lista = _parsear_etiquetas(etiquetas, len(ficheros))
     async with _SEM_PROCESAMIENTO:
-        _log_peticion("describir_inicio", peticion_id, norma=norma, modo=modo, archivos=len(ficheros))
+        _log_peticion("describir_inicio", peticion_id, norma=norma, modo=modo, modelo=modelo_seleccionado, archivos=len(ficheros), _incognito=incognito_modo)
         procesados: list[tuple[router_entrada.DocumentoProcesado, str, str | None]] = []
         for archivo, etiqueta in zip(ficheros, etiquetas_lista, strict=False):
             nombre_seguro = _sanear_texto_corto(archivo.filename or "sin_nombre", 180, "sin_nombre")
@@ -332,22 +418,29 @@ async def describir(
             raise HTTPException(500, f"Esquema inválido: {e}") from None
         filtro_claves = _construir_filtro(modo, campos, esquema)
         try:
-            propuesta = await extractor.extraer(conjunto.entrada, esquema, MODELO, filtro_claves, idioma_salida)
+            propuesta = await extractor.extraer(conjunto.entrada, esquema, modelo_seleccionado, filtro_claves, idioma_salida)
             bibliografico.aplicar_validaciones(propuesta)
+            bibliografico.aplicar_bloques_isbd_a_propuesta(propuesta)
         except Exception as err:
             logger.exception("[%s] Error en extracción", peticion_id)
             raise HTTPException(500, "Error al generar la propuesta bibliográfica.") from err
-        _log_peticion("describir_fin", peticion_id, campos=len(propuesta.campos), advertencias=len(propuesta.advertencias))
-    ficha_tecnica = auditoria.generar_ficha_tecnica(peticion_id=peticion_id, documento=conjunto, esquema=esquema, modo=modo, idioma_salida=idioma_salida, modelo=MODELO, filtro_claves=filtro_claves, propuesta=propuesta, deteccion=None, sha256_documento=None)
+        _log_peticion("describir_fin", peticion_id, campos=len(propuesta.campos), advertencias=len(propuesta.advertencias), _incognito=incognito_modo)
+    ficha_tecnica = auditoria.generar_ficha_tecnica(peticion_id=peticion_id, documento=conjunto, esquema=esquema, modo=modo, idioma_salida=idioma_salida, modelo=modelo_seleccionado, filtro_claves=filtro_claves, propuesta=propuesta, deteccion=None, sha256_documento=None, incognito=incognito_modo)
     campos_dict = [c.__dict__ for c in propuesta.campos]
     isbd = bibliografico.generar_isbd_desde_campos(campos_dict)
+    from . import exportadores as _exp
+    marc21_lineas = _exp.generar_marc21_texto(campos_dict)
+    marc21_texto = _exp.marc21_a_texto_plano(marc21_lineas)
     return {
         "peticion": peticion_id,
         "idioma_salida": idioma_salida,
+        "modelo": modelo_seleccionado,
         "version_tipo": APP_VERSION,
         "documento": {"nombre": conjunto.nombre_original, "tipo_mime": conjunto.tipo_mime, "tamano_bytes": conjunto.tamano_bytes, "paginas": conjunto.paginas, "ruta_procesamiento": conjunto.ruta, "archivos": [a.__dict__ for a in conjunto.archivos], "cobertura_zonas": conjunto.cobertura},
         "auditoria": ficha_tecnica,
         "isbd": isbd,
+        "marc21_lineas": marc21_lineas,
+        "marc21_texto": marc21_texto,
         "propuesta": propuesta.to_dict(),
     }
 
@@ -371,7 +464,7 @@ def _construir_filtro(modo: str, campos_str: str | None, esquema: extractor.Esqu
 
 @router.post("/exportar/{formato}")
 async def exportar(formato: str, payload: dict):
-    formatos_validos = {"json", "csv", "isbd", "marcxml"}
+    formatos_validos = {"json", "csv", "isbd", "marcxml", "marc-txt"}
     if formato not in formatos_validos:
         raise HTTPException(400, f"Formato no soportado: {formato}")
     payload = _validar_payload_exportacion(payload)

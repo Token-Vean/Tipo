@@ -1,4 +1,4 @@
-# Prompt técnico del modelo en Tipo v0.1.2-alpha
+# Prompt técnico del modelo en Tipo v0.2.0-beta.4
 
 Este documento recoge el prompt base utilizado por Tipo para solicitar al modelo local la extracción de datos bibliográficos. Tipo no pide al modelo que catalogue automáticamente ni que cree registros definitivos: el modelo devuelve datos atómicos observables y la aplicación construye una propuesta revisable.
 

@@ -324,3 +324,151 @@ areas:
           de otra lengua, texto bilingüe o edición plurilingüe. Si es traducción y consta
           el traductor o la lengua original, recógelo aquí de forma breve.
         ejemplo: "Traducción del italiano"
+
+  # =========================================================================
+  # Bloques ISBD ensamblados por área, para revisión humana directa.
+  #
+  # Los catalogadores leen el resultado por ÁREAS ISBD, no por campos sueltos.
+  # Estos elementos piden al modelo el área ya redactada con su puntuación
+  # ISBD a partir de los campos atómicos. Conviven con los campos atómicos:
+  # los campos van al MARCXML, los bloques ISBD a la vista de revisión.
+  # Si el modelo no los devuelve, el exportador los reconstruye de forma
+  # determinista a partir de los campos atómicos (bibliografico.py).
+  # =========================================================================
+  - id: bloques_isbd
+    nombre: "Bloques ISBD por área (revisión humana)"
+    elementos:
+      - id: "ISBD-0"
+        clave: isbd_area_0
+        nombre: "Área 0 — Forma del contenido y tipo de medio"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: si
+        fuente_preferida: "convención"
+        instruccion: >
+          Para una monografía impresa moderna, este área es prácticamente fija:
+          "Texto (visual) : sin mediación". Si fuese Braille u otro soporte
+          específico, ajustar (por ejemplo: "Texto (táctil) : sin mediación").
+        ejemplo: "Texto (visual) : sin mediación"
+        valor_por_defecto: "Texto (visual) : sin mediación"
+      - id: "ISBD-1"
+        clave: isbd_area_1
+        nombre: "Área 1 — Título y mención de responsabilidad"
+        tipo: texto
+        obligatorio: true
+        multiple: false
+        extraible: si
+        fuente_preferida: "portada"
+        instruccion: >
+          Ensambla este área a partir de los campos atómicos titulo_principal,
+          subtitulo y mencion_responsabilidad, con puntuación ISBD:
+              Título [ : subtítulo] [ / mención de responsabilidad]
+          Si el volumen contiene varias obras del mismo autor, separa los
+          títulos con espacio-punto y coma-espacio: "Obra A ; Obra B / Autor".
+          Si las obras son de autores distintos: "Obra A / Autor A . Obra B /
+          Autor B" (cambio de mención).
+          La palabra "Anónimo" en portada SÍ puede figurar como mención de
+          responsabilidad.
+        ejemplo: "De Madrid al cielo / Ismael Grasa"
+        error_comun: >
+          "(ed.)", "(eds.)", "edición de", "coord.", "dir." son mención de
+          responsabilidad y van en el área 1, NO son mención de edición del área 2.
+      - id: "ISBD-2"
+        clave: isbd_area_2
+        nombre: "Área 2 — Edición"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        fuente_preferida: "portada, verso de portada"
+        instruccion: >
+          Solo si hay mención explícita de edición ("2ª ed.", "Segunda edición
+          revisada"...). Si es 1ª edición, este área puede dejarse en blanco
+          según las prácticas locales del catálogo.
+          Reimpresión NO es edición.
+        ejemplo: "2ª ed."
+      - id: "ISBD-4"
+        clave: isbd_area_4
+        nombre: "Área 4 — Publicación, distribución, etc."
+        tipo: texto
+        obligatorio: true
+        multiple: false
+        extraible: si
+        fuente_preferida: "portada, verso de portada, colofón"
+        instruccion: >
+          Ensambla:
+              Lugar : Editor, Fecha
+          Si la fecha solo consta en el depósito legal o en el ©, anteponer
+          "D.L." o "cop." al año. Si la fecha está totalmente ausente, se puede
+          dejar sin fecha o usar "[s.a.]".
+        ejemplo: "Barcelona : Anagrama, D.L. 1994"
+        error_comun: >
+          La palabra "Editorial" o "Ediciones" no se transcribe normalmente:
+          "Editorial Anagrama" → "Anagrama".
+      - id: "ISBD-5"
+        clave: isbd_area_5
+        nombre: "Área 5 — Descripción física"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        fuente_preferida: "observación del ejemplar"
+        instruccion: >
+          Ensambla:
+              extensión [: ilustraciones] ; dimensiones
+          Por ejemplo: "145 p. ; 16 cm." o "262 p. : il. col. ; 23 cm."
+          Si no se puede observar del material aportado, deja el bloque vacío.
+        ejemplo: "145 p. ; 16 cm."
+      - id: "ISBD-6"
+        clave: isbd_area_6
+        nombre: "Área 6 — Serie"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        fuente_preferida: "portada, cubierta, verso de portada"
+        instruccion: >
+          La serie va ENTRE PARÉNTESIS. Si hay número de serie, separar con
+          espacio-punto y coma-espacio antes del número:
+              (Letras Hispánicas ; 59)
+          Si hay sección/subsección, puede usarse punto:
+              (Novelas y cuentos ; 10 . Sección Literatura)
+        ejemplo: "(Letras Hispánicas ; 59)"
+        error_comun: >
+          No confundir la colección editorial del libro con el catálogo de
+          otros títulos que a veces aparece al final.
+      - id: "ISBD-7"
+        clave: isbd_area_7
+        nombre: "Área 7 — Notas"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: parcial
+        fuente_preferida: "cualquier fuente aportada"
+        instruccion: >
+          Notas breves y útiles para el usuario del catálogo. Por ejemplo:
+          "Finalista premio Herralde de novela 1994", "Bibliografía",
+          "Traducción del italiano", "El Senado ha colaborado en la edición".
+          Si hay varias notas, sepáralas con punto y espacio.
+        ejemplo: "Finalista premio Herralde de novela 1994"
+        error_comun: >
+          La ilustración o el diseñador de la CUBIERTA no se añade como nota.
+          Tampoco los catálogos de otros libros del editor que aparecen al
+          final del volumen.
+      - id: "ISBD-8"
+        clave: isbd_area_8
+        nombre: "Área 8 — Número normalizado (ISBN, D.L.)"
+        tipo: texto
+        obligatorio: false
+        multiple: false
+        extraible: si
+        fuente_preferida: "verso de portada, colofón"
+        instruccion: >
+          Lista de identificadores normalizados visibles, uno por línea:
+              ISBN: 84-339-0980-0
+              D.L. B-39791-1994
+          Si hay varios ISBN con coletilla, conserva la coletilla entre
+          paréntesis tal y como aparece: "ISBN 84-7530-375-7 (Grandes maestros
+          del crimen y misterio)".
+        ejemplo: "ISBN 84-339-0980-0\nD.L. B-39791-1994"

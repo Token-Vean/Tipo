@@ -119,3 +119,19 @@ ollama-models/
 # =============================================================================
 $RECYCLE.BIN/
 *.lnk
+
+# Datos locales de autenticación / estado
+data/
+!data/.gitkeep
+data/users.json
+
+# Informes locales de seguridad / SBOM
+security-reports/
+*.cdx.json
+*.spdx.json
+sbom-*.json
+
+# Bases locales SQLite
+*.sqlite3
+*.sqlite
+*.db

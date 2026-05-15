@@ -1,0 +1,17 @@
+{
+  "name": "Tipo — Asistente local de precatalogación",
+  "short_name": "Tipo",
+  "description": "Asistente local de precatalogación bibliográfica para monografías impresas. Procesamiento offline mediante Ollama.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f5f1ec",
+  "theme_color": "#862019",
+  "lang": "es",
+  "icons": [
+    { "src": "/img/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/img/tipo-logo-full.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ],
+  "categories": ["productivity", "education", "utilities"]
+}

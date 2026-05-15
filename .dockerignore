@@ -1,0 +1,55 @@
+# Git / entornos locales
+.git
+.gitignore
+.venv
+venv
+env
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+htmlcov
+
+# Configuración local y secretos
+.env
+.env.*.local
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+secrets
+credentials
+
+# Datos persistentes o de prueba
+data
+exports
+salidas
+ejemplos/*
+!ejemplos/README.md
+pruebas
+test_documents
+documentos_prueba
+*.pdf
+*.docx
+*.jpg
+*.jpeg
+*.png
+*.tif
+*.tiff
+
+# Release/build
+build
+dist
+*.log
+*.tmp
+*.bak
+
+# SO / editores
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode
+.idea

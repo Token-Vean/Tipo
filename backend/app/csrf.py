@@ -44,6 +44,12 @@ METODOS_MUTADORES = {"POST", "PUT", "PATCH", "DELETE"}
 RUTAS_EXENTAS = {
     "/api/estado",
     "/api/csrf",
+    # La configuración inicial y el login deben funcionar incluso en
+    # navegadores/entornos que omiten Origin/Referer en localhost.
+    # El resto de rutas autenticadas mantiene protección CSRF.
+    "/api/auth/setup",
+    "/api/auth/login",
+    "/api/auth/logout",
 }
 
 TOKEN_TTL_SEGUNDOS = 8 * 60 * 60

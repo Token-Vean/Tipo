@@ -19,7 +19,7 @@ services:
 
   # ---------- Ollama en contenedor (perfil "bundled") ----------------------
   ollama:
-    image: ${OLLAMA_IMAGE:-ollama/ollama:0.21.2}
+    image: ${OLLAMA_IMAGE:-ollama/ollama@sha256:7db82c93ff9fae4011a2aa10931b1d2c2a228d508b8736366e3fbaee616b2e8c}
     container_name: tipo-ollama
     profiles: ["bundled"]
     volumes:
@@ -43,15 +43,19 @@ services:
 
   # ---------- Aplicación con Ollama en contenedor --------------------------
   app:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
     container_name: tipo-app
     profiles: ["bundled"]
     depends_on:
       - ollama
     environment:
       OLLAMA_URL: http://ollama:11434
-      MODELO_BASE: ${MODELO_BASE:-gemma4:e2b}
-      MODELO_NOMBRE: ${MODELO_NOMBRE:-tipo}
+      MODELO_BASE: ${MODELO_BASE:-gemma4:e4b}
+      MODELO_NOMBRE: ${MODELO_NOMBRE:-gemma4:e4b}
+      TIPO_CREAR_MODELO_DERIVADO: ${TIPO_CREAR_MODELO_DERIVADO:-false}
       MODELFILE_PATH: /app/Modelfile
       PERFIL: bundled
       PUERTO: "8081"
@@ -62,6 +66,11 @@ services:
       ALLOW_NETWORK_EXPOSURE: ${ALLOW_NETWORK_EXPOSURE:-false}
       INCLUIR_HASH_DOCUMENTO_AUDITORIA: ${INCLUIR_HASH_DOCUMENTO_AUDITORIA:-true}
       PERMITIR_APAGADO_UI: ${PERMITIR_APAGADO_UI:-true}
+      TIPO_AUTH_DISABLED: ${TIPO_AUTH_DISABLED:-false}
+      TIPO_DATA_DIR: /app/data
+      TIPO_SESSION_TTL_SECONDS: ${TIPO_SESSION_TTL_SECONDS:-43200}
+      TIPO_PASSWORD_MIN_LENGTH: ${TIPO_PASSWORD_MIN_LENGTH:-10}
+      TIPO_COOKIE_SECURE: ${TIPO_COOKIE_SECURE:-false}
       OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-32768}
       OLLAMA_NUM_PREDICT: ${OLLAMA_NUM_PREDICT:-8192}
       MAX_LONGITUD_TEXTO_EXTRAIDO: ${MAX_LONGITUD_TEXTO_EXTRAIDO:-800000}
@@ -77,6 +86,7 @@ services:
       - ./schemas:/app/schemas:ro
       - ./Modelfile:/app/Modelfile:ro
       - ./frontend/static:/app/static:ro
+      - tipo-data:/app/data
     restart: "no"
     security_opt:
       - no-new-privileges:true
@@ -101,13 +111,17 @@ services:
   # que funciona en Docker Desktop (Windows, macOS) nativamente y en
   # Linux gracias al mapping de extra_hosts.
   app-external:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
     container_name: tipo-app
     profiles: ["external"]
     environment:
       OLLAMA_URL: http://host.docker.internal:11434
-      MODELO_BASE: ${MODELO_BASE:-gemma4:e2b}
-      MODELO_NOMBRE: ${MODELO_NOMBRE:-tipo}
+      MODELO_BASE: ${MODELO_BASE:-gemma4:e4b}
+      MODELO_NOMBRE: ${MODELO_NOMBRE:-gemma4:e4b}
+      TIPO_CREAR_MODELO_DERIVADO: ${TIPO_CREAR_MODELO_DERIVADO:-false}
       MODELFILE_PATH: /app/Modelfile
       PERFIL: external
       PUERTO: "8081"
@@ -118,6 +132,11 @@ services:
       ALLOW_NETWORK_EXPOSURE: ${ALLOW_NETWORK_EXPOSURE:-false}
       INCLUIR_HASH_DOCUMENTO_AUDITORIA: ${INCLUIR_HASH_DOCUMENTO_AUDITORIA:-true}
       PERMITIR_APAGADO_UI: ${PERMITIR_APAGADO_UI:-true}
+      TIPO_AUTH_DISABLED: ${TIPO_AUTH_DISABLED:-false}
+      TIPO_DATA_DIR: /app/data
+      TIPO_SESSION_TTL_SECONDS: ${TIPO_SESSION_TTL_SECONDS:-43200}
+      TIPO_PASSWORD_MIN_LENGTH: ${TIPO_PASSWORD_MIN_LENGTH:-10}
+      TIPO_COOKIE_SECURE: ${TIPO_COOKIE_SECURE:-false}
       OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-32768}
       OLLAMA_NUM_PREDICT: ${OLLAMA_NUM_PREDICT:-8192}
       MAX_LONGITUD_TEXTO_EXTRAIDO: ${MAX_LONGITUD_TEXTO_EXTRAIDO:-800000}
@@ -135,6 +154,7 @@ services:
       - ./schemas:/app/schemas:ro
       - ./Modelfile:/app/Modelfile:ro
       - ./frontend/static:/app/static:ro
+      - tipo-data:/app/data
     restart: "no"
     security_opt:
       - no-new-privileges:true
@@ -155,3 +175,4 @@ services:
 
 volumes:
   ollama-models:
+  tipo-data:

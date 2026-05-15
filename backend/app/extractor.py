@@ -221,52 +221,88 @@ donde, por convención, se concentran los datos descriptivos: preliminares
 cuerpo del libro no se te entrega porque no aporta datos descriptivos.
 
 Tu tarea NO es catalogar ni crear un registro definitivo. Es extraer datos
-atómicos OBSERVABLES y JUSTIFICADOS para que un profesional los revise.
+atómicos OBSERVABLES y JUSTIFICADOS, y proponer los bloques ISBD por área
+correspondientes, para que un profesional los revise.
 
 Perfil descriptivo: {norma}.
 Idioma de redacción de los campos: {idioma_salida}.
 
-# Método de trabajo: tres fases internas
-Razona internamente en estas tres fases, pero NO las muestres. Devuelve SOLO
-el JSON final.
+# Método de trabajo: por áreas ISBD
+Razona internamente recorriendo las áreas ISBD en este orden y, dentro de cada
+área, en tres fases. NO muestres el razonamiento. Devuelve SOLO el JSON final.
 
-FASE 1 — Evidencias literales.
-Recorre el material y localiza los fragmentos literales que puedan justificar
-cada campo solicitado. Anota en qué zona y página aparece cada fragmento: las
-cabeceras del tipo "===== preliminares · página 3 de 210 =====" te lo indican.
+ÁREAS ISBD A CUBRIR
+  · Área 0  — Forma del contenido y tipo de medio
+  · Área 1  — Título y mención de responsabilidad     (fuente: portada)
+  · Área 2  — Edición                                 (fuente: portada / verso)
+  · Área 4  — Publicación, distribución, etc.         (fuente: portada / verso / colofón)
+  · Área 5  — Descripción física                      (fuente: observación del ejemplar)
+  · Área 6  — Serie                                   (fuente: portada / cubierta / verso)
+  · Área 7  — Notas                                   (cualquier fuente)
+  · Área 8  — Número normalizado (ISBN, D.L.)         (fuente: verso / colofón)
+El Área 3 no se usa con monografías.
 
-FASE 2 — Decisión descriptiva.
-Propón valor para un campo SOLO si hay evidencia suficiente y observable. Para
-cada valor anota: el dato, la evidencia literal, la zona/página y un nivel de
-confianza (alta, media, baja).
+FASES INTERNAS POR ÁREA
+  1. Evidencias literales: localiza en las zonas los fragmentos que justifican
+     los campos atómicos de esa área (título, lugar, fecha, ISBN…). Anota en
+     qué zona y página aparece cada fragmento: las cabeceras del tipo
+     "===== preliminares · página 3 de 210 =====" te lo indican.
+  2. Decisión descriptiva: rellena los campos atómicos de esa área SOLO si hay
+     evidencia suficiente. Para cada uno: valor, evidencia, zona y confianza.
+  3. Revisión crítica obligatoria: comprueba si has interpretado mal la
+     evidencia. Aplica las reglas críticas. Ante la duda, baja la confianza o
+     deja el campo en null.
+  4. Ensamblaje ISBD: con los campos atómicos ya decididos, redacta el bloque
+     ISBD de esa área aplicando su puntuación (ver más abajo).
 
-FASE 3 — Revisión crítica obligatoria.
-Antes de cerrar cada campo comprueba si has interpretado mal la evidencia.
-Aplica las reglas críticas. Ante la duda, baja la confianza o devuelve valor
-null; nunca rellenes por aproximación.
-
-# Jerarquía de fuentes (ISBD)
+# Jerarquía de fuentes ISBD
 1. Portada / página de título: fuente principal de título y de mención de
    responsabilidad.
 2. Verso de portada (página de derechos): fuente principal de edición,
    publicación, copyright, ISBN, depósito legal y notas.
 3. Cubierta, lomo y colofón: fuentes complementarias.
 4. Resto del material: solo como apoyo, nunca como fuente principal.
-Si hay conflicto entre portada y cubierta, prioriza la portada. Si hay
-conflicto entre portada y verso de portada, usa la portada para título y
-responsabilidad, y el verso para datos editoriales, copyright, ISBN, depósito
-legal y notas.
+Conflicto portada / cubierta → manda la portada.
+Conflicto portada / verso → portada para título y responsabilidad; verso para
+datos editoriales, ©, ISBN, depósito legal y notas.
+
+# Puntuación ISBD por área
+Aplícala literalmente al redactar los bloques ISBD.
+  Área 1:  Título [ : subtítulo] [ / mención de responsabilidad]
+           Varias obras del mismo autor:  Obra A ; Obra B / Autor
+           Varias obras de autores distintos: Obra A / Autor A . Obra B / Autor B
+  Área 2:  2ª ed.      (solo si hay mención explícita de edición)
+  Área 4:  Lugar : Editor, Fecha
+           Si la fecha solo aparece en el D.L. o el ©: antepón "D.L." o "cop."
+  Área 5:  extensión [ : ilustraciones] ; dimensiones
+           Ej.: "145 p. ; 16 cm."   /   "262 p. : il. col. ; 23 cm."
+  Área 6:  (Serie [; número])
+           Sección/subsección admite punto:  (Novelas y cuentos ; 10 . Sección…)
+  Área 7:  Notas breves separadas por punto y espacio.
+  Área 8:  Una línea por identificador:
+              ISBN <numero> [(<coletilla>)]
+              D.L. <signatura>
+La palabra "Editorial" o "Ediciones" NO se transcribe normalmente:
+"Editorial Anagrama" → "Anagrama".
 
 # Reglas críticas de desambiguación
 - "Traducido del italiano", "trad. del…": el idioma original puede ser ese,
   pero el idioma de ESTA edición suele ser otro. No los confundas.
 - "Título original", "ed. original", "originally published as": NO es el
-  título principal de esta edición, salvo que no exista ningún otro título en
-  el material aportado.
-- Un nombre junto a "traducción", "versión", "prólogo", "edición", "notas",
+  título principal de esta edición, salvo que no exista ningún otro título.
+- "(ed.)", "(eds.)", "edición de", "coord.", "dir." son mención de
+  responsabilidad del Área 1 (245$c), NO mención de edición del Área 2 (250).
+- Un nombre junto a "traducción", "versión", "prólogo", "edición de", "notas",
   "introducción", "ilustraciones" o "selección de" es responsabilidad
-  secundaria, no autor principal, salvo que también conste como autor de la
-  obra.
+  secundaria, no autor principal, salvo que también conste como autor de la obra.
+- La palabra "Anónimo" en portada SÍ puede figurar como mención de
+  responsabilidad del Área 1.
+- Si una fecha solo consta en el depósito legal o en el ©, transcríbela en el
+  Área 4 anteponiendo "D.L." o "cop." al año.
+- El ilustrador, diseñador o autor de la fotografía DE CUBIERTA NO se añade
+  como nota del Área 7. Tampoco los catálogos de otros títulos del editor que
+  aparezcan al final del volumen.
+- "Reimpresión" no es "edición": no la pongas en el Área 2.
 - Datos que aparecen solo en dedicatorias, citas, lemas, publicidad
   editorial, catálogos de otros títulos de la editorial o solapas: no son
   datos principales. Si los usas, adviértelo y baja la confianza.
@@ -282,12 +318,19 @@ Si la zona donde suele estar un dato SÍ se aportó pero el dato no aparece,
 devuelve valor null y confianza null. Es un "no encontrado" legítimo, distinto
 de "no se aportó la fuente". No lo rellenes por inferencia.
 
-# Formato de cada campo
+# Formato de cada campo atómico
   valor      -> dato bibliográfico propuesto, o null
   confianza  -> "alta" | "media" | "baja", o null si valor es null
   evidencia  -> fragmento literal breve que justifica el dato, o null
   zona       -> zona y página donde se observó (p. ej. "preliminares ·
                 página 3"), o null si no se puede precisar
+
+# Formato de cada bloque ISBD
+Los bloques ISBD (claves "isbd_area_*") son cadenas ya ENSAMBLADAS con su
+puntuación ISBD, redactadas a partir de los campos atómicos de la misma área
+que acabas de proponer. Si no procede (porque los campos atómicos son null),
+devuelve valor null. La evidencia es la del campo atómico más representativo
+del área.
 
 Devuelve EXCLUSIVAMENTE un JSON válido con la estructura indicada, sin texto
 antes ni después, sin explicaciones y sin mostrar las fases.
@@ -312,7 +355,8 @@ def _bloque_ejemplos(ejemplos: list[dict]) -> str:
         "# Ejemplos resueltos",
         "Estudia estos ejemplos de extracción correcta antes de responder. "
         "Muestran cómo distinguir autor de traductor, título de título "
-        "original, y cuándo devolver null.",
+        "original, cuándo (ed.)/(eds.) es responsabilidad y no edición, y "
+        "cuándo devolver null.",
     ]
     for i, ej in enumerate(ejemplos[:MAX_EJEMPLOS_PROMPT], start=1):
         desc = f" — {ej['descripcion']}" if ej.get("descripcion") else ""
@@ -324,6 +368,79 @@ def _bloque_ejemplos(ejemplos: list[dict]) -> str:
         partes.append("JSON correcto:")
         partes.append(json.dumps(ej["salida"], indent=2, ensure_ascii=False))
     return "\n".join(partes)
+
+
+# Mapeo de las áreas lógicas del esquema (id) a las áreas ISBD (0, 1, 2…).
+# Las áreas lógicas son las que define schemas/datos-bibliograficos-monografia.yaml;
+# las ISBD son las que enseña el método de catalogación. Esto permite presentar
+# los campos atómicos al modelo agrupados por el área ISBD que les corresponde.
+_AREA_LOGICA_A_ISBD: dict[str, str] = {
+    "identificacion": "8",         # ISBN, D.L., lengua de la edición
+    "titulo_responsabilidad": "1", # Título, subtítulo, responsabilidad
+    "edicion_publicacion": "4",    # Lugar, editor, fecha (con edición en el 2 si la hay)
+    "descripcion_fisica": "5",     # Extensión, ilustraciones, dimensiones
+    "serie_notas": "6",            # Serie (las notas se redactan aparte)
+    "bloques_isbd": None,          # se intercala junto a su área correspondiente
+}
+
+# Algunas claves del esquema "viajan" a otra área ISBD distinta de la lógica.
+# Por ejemplo, mencion_edicion vive en el área lógica edicion_publicacion, pero
+# el bloque ISBD propio es el Área 2; lengua_texto/idioma_original son
+# identificación pero sus notas van al Área 7.
+_CLAVE_A_ISBD_OVERRIDE: dict[str, str] = {
+    "mencion_edicion": "2",
+    "nota_general": "7",
+    "nota_bibliografia": "7",
+    "nota_lengua": "7",
+    "resumen": "7",
+    "isbd_area_0": "0", "isbd_area_1": "1", "isbd_area_2": "2",
+    "isbd_area_4": "4", "isbd_area_5": "5", "isbd_area_6": "6",
+    "isbd_area_7": "7", "isbd_area_8": "8",
+    "tipo_contenido": "0", "tipo_medio": "0", "tipo_soporte": "0",
+}
+
+_ORDEN_AREAS_ISBD = ["0", "1", "2", "4", "5", "6", "7", "8"]
+
+_TITULOS_AREA_ISBD = {
+    "0": "Área 0 — Forma del contenido y tipo de medio",
+    "1": "Área 1 — Título y mención de responsabilidad",
+    "2": "Área 2 — Edición",
+    "4": "Área 4 — Publicación, distribución, etc.",
+    "5": "Área 5 — Descripción física",
+    "6": "Área 6 — Serie",
+    "7": "Área 7 — Notas",
+    "8": "Área 8 — Número normalizado (ISBN, D.L.)",
+}
+
+
+def _area_isbd_de(el: ElementoEsquema) -> str:
+    """Devuelve la letra de área ISBD a la que se adscribe un elemento."""
+    if el.clave in _CLAVE_A_ISBD_OVERRIDE:
+        return _CLAVE_A_ISBD_OVERRIDE[el.clave]
+    return _AREA_LOGICA_A_ISBD.get(el.area_id or "", "7") or "7"
+
+
+def _bloque_campo(el: ElementoEsquema) -> str:
+    """Renderiza la descripción de un campo individual para el prompt."""
+    bloque = f'\n### Campo "{el.clave}" ({el.id} — {el.nombre})\n'
+    bloque += f"Tipo: {el.tipo}"
+    if el.multiple:
+        bloque += " (admite varios valores; devuelve lista)"
+    if el.marc:
+        bloque += f"\nProyección MARC21 orientativa: {el.marc}"
+    if el.fuente_preferida:
+        zona = _zona_de_fuente(el.fuente_preferida)
+        bloque += f"\nFuente preferida: {el.fuente_preferida} (busca en la zona {zona})"
+    if el.tipo == "lista" and el.valores:
+        bloque += f"\nValores permitidos: {', '.join(el.valores)}"
+    if el.extraible == "parcial":
+        bloque += "\nIMPORTANTE: solo cumplimentar si hay evidencia explícita."
+    bloque += f"\n\n{el.instruccion or ''}".rstrip()
+    if el.ejemplo:
+        bloque += f"\nEjemplo correcto: {el.ejemplo}"
+    if el.error_comun:
+        bloque += f"\nError frecuente a evitar: {el.error_comun}"
+    return bloque
 
 
 def construir_prompt(
@@ -348,27 +465,30 @@ def construir_prompt(
             for i, etiqueta in enumerate(entrada.imagenes_etiquetas)
         ) + "\n"
 
-    campos_txt = []
+    # Agrupar los campos extraíbles por área ISBD.
+    por_area: dict[str, list[ElementoEsquema]] = {a: [] for a in _ORDEN_AREAS_ISBD}
     for el in extraibles:
-        bloque = f'\n## Campo "{el.clave}" ({el.id} — {el.nombre})\n'
-        bloque += f"Tipo: {el.tipo}"
-        if el.multiple:
-            bloque += " (admite varios valores; devuelve lista)"
-        if el.marc:
-            bloque += f"\nProyección MARC21 orientativa: {el.marc}"
-        if el.fuente_preferida:
-            zona = _zona_de_fuente(el.fuente_preferida)
-            bloque += f"\nFuente preferida: {el.fuente_preferida} (busca en la zona {zona})"
-        if el.tipo == "lista" and el.valores:
-            bloque += f"\nValores permitidos: {', '.join(el.valores)}"
-        if el.extraible == "parcial":
-            bloque += "\nIMPORTANTE: solo cumplimentar si hay evidencia explícita."
-        bloque += f"\n\n{el.instruccion or ''}".rstrip()
-        if el.ejemplo:
-            bloque += f"\nEjemplo correcto: {el.ejemplo}"
-        if el.error_comun:
-            bloque += f"\nError frecuente a evitar: {el.error_comun}"
-        campos_txt.append(bloque)
+        area = _area_isbd_de(el)
+        por_area.setdefault(area, []).append(el)
+
+    secciones_areas: list[str] = ["# Campos a proponer, agrupados por área ISBD"]
+    for area in _ORDEN_AREAS_ISBD:
+        elementos_area = por_area.get(area) or []
+        if not elementos_area:
+            continue
+        secciones_areas.append(f"\n## {_TITULOS_AREA_ISBD[area]}")
+        # Primero los campos atómicos, luego el bloque ISBD ensamblado, para
+        # que el modelo redacte el bloque DESPUÉS de haber decidido los campos.
+        atomicos = [e for e in elementos_area if not e.clave.startswith("isbd_area_")]
+        bloques = [e for e in elementos_area if e.clave.startswith("isbd_area_")]
+        for el in atomicos:
+            secciones_areas.append(_bloque_campo(el))
+        if bloques:
+            secciones_areas.append(
+                "\n### Bloque ISBD ensamblado de este área (revisión humana)"
+            )
+            for el in bloques:
+                secciones_areas.append(_bloque_campo(el))
 
     esquema_json = {
         "campos": {
@@ -386,10 +506,11 @@ def construir_prompt(
         secciones.append(bloque_ejemplos)
     if fuentes:
         secciones.append(fuentes)
-    secciones.append("# Campos a proponer" + "".join(campos_txt))
+    secciones.append("\n".join(secciones_areas))
     secciones.append(
         "# Estructura de respuesta esperada\n"
-        "Devuelve un JSON con esta forma exacta:\n"
+        "Devuelve un JSON con esta forma exacta (todas las claves presentes,\n"
+        "incluyendo los bloques isbd_area_*):\n"
         + json.dumps(esquema_json, indent=2, ensure_ascii=False)
     )
     secciones.append(

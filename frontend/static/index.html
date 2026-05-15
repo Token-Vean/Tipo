@@ -1,10 +1,14 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" data-theme="light" data-density="cozy">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Tipo — AI Assistant for Cataloging</title>
+  <title>Tipo — Asistente local de precatalogación</title>
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" href="/img/favicon.ico" />
+  <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
+  <meta name="theme-color" content="#862019" />
 </head>
 <body>
   <header class="topbar">
@@ -16,40 +20,247 @@
           <option value="en">English</option>
         </select>
       </label>
-      <span id="estado" class="status" data-i18n="statusPreparing">Preparando motor local…</span>
+      <button id="btn-tema" class="icon-btn" type="button" aria-label="Cambiar tema" title="Tema claro/oscuro">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      </button>
+      <button id="btn-densidad" class="icon-btn" type="button" aria-label="Tamaño de fuente" title="Tamaño de fuente">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18l4-12 4 12M6 14h4M14 18l3-9 3 9M15 15h4"/></svg>
+      </button>
+      <button id="btn-incognito" class="icon-btn" type="button" aria-label="Modo incógnito" title="Modo incógnito (sin auditoría)" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 11h14M7 11l1-5h8l1 5"/><circle cx="7" cy="15" r="3"/><circle cx="17" cy="15" r="3"/><path d="M10 15h4"/></svg>
+      </button>
+      <button id="btn-perfil" class="ghost hidden" type="button" data-i18n="profile">Perfil</button>
+      <span id="estado" class="status" data-state="preparing" data-i18n="statusPreparing">Preparando motor local…</span>
       <button id="btn-apagar" class="ghost" type="button" data-i18n="shutdown">Apagar</button>
     </div>
   </header>
+
   <main class="layout">
     <section class="hero card">
       <p class="eyebrow" data-i18n="eyebrow">Asistente local de precatalogación</p>
-      <h1 data-i18n="heroTitle">Extracción bibliográfica para monografías impresas</h1>
-      <p data-i18n="heroText">Suba el libro completo (PDF, imágenes o documento) y Tipo localizará por sí mismo las zonas donde se encuentran los datos descriptivos para proponer una descripción estructurada revisable. El procesamiento se realiza en local mediante Ollama.</p>
-      <div class="notice" data-i18n="notice">Tipo no consulta catálogos externos, no crea puntos de acceso autorizados, no asigna materias normalizadas y no modifica sistemas bibliotecarios.</div>
+      <h1 data-i18n="heroTitle">Catalogación asistida de monografía moderna impresa</h1>
+      <p data-i18n="heroText">Tipo está diseñado en esta beta para la precatalogación y catalogación asistida de monografía moderna impresa. Suba el libro completo y la herramienta localizará las zonas descriptivas para proponer una descripción estructurada revisable. El procesamiento se realiza en local mediante Ollama.</p>
+      <div class="notice" data-i18n="notice">Alcance de esta beta: monografía moderna impresa. Tipo no consulta catálogos externos, no crea autoridades ni puntos de acceso autorizados, no asigna materias normalizadas y no modifica sistemas bibliotecarios.</div>
     </section>
+
     <section class="card form-card">
       <h2 data-i18n="sourcesTitle">1. El libro</h2>
-      <p class="muted" data-i18n="sourcesHelp">Suba el libro completo. No hace falta separar portada, verso o colofón: Tipo localiza internamente las zonas donde suele estar la información (preliminares y finales) y descarta el cuerpo. También puede subir imágenes sueltas de páginas concretas si lo prefiere.</p>
+      <div class="scope-banner"><strong data-i18n="scopeBetaTitle">Beta especializada</strong><span data-i18n="scopeBetaText">Esta versión está pensada para monografía moderna impresa. No está optimizada para manuscritos, fondo antiguo, publicaciones seriadas ni recursos electrónicos.</span></div>
+      <p class="muted" data-i18n="sourcesHelp">Suba el libro completo. No hace falta separar portada, verso o colofón: Tipo localiza internamente las zonas relevantes y descarta el cuerpo. También puede subir imágenes sueltas si lo prefiere.</p>
       <input id="ficheros" type="file" multiple accept="image/*,.pdf,.txt,.md,.docx" />
       <div id="lista-ficheros" class="file-list"></div>
-      <div class="grid one">
-        <label><span data-i18n="modeLabel">Modo</span><select id="modo"><option value="esencial" data-i18n="modeEssential">Esencial</option><option value="completo" data-i18n="modeComplete">Completo</option></select></label>
+
+      <div class="grid two">
+        <label><span data-i18n="modeLabel">Modo</span>
+          <select id="modo">
+            <option value="esencial" data-i18n="modeEssential">Esencial</option>
+            <option value="completo" data-i18n="modeComplete">Completo</option>
+          </select>
+        </label>
+        <label><span data-i18n="modelLabel">Modelo Ollama</span>
+          <select id="modelo-ollama" aria-label="Modelo Ollama">
+            <option value="" data-i18n="modelsLoading">Cargando modelos…</option>
+          </select>
+        </label>
       </div>
+      <div class="toolbar-row model-toolbar">
+        <button id="btn-recargar-modelos" class="small-btn ghost" type="button" data-i18n="modelsRefresh">Actualizar lista de modelos</button>
+        <button id="btn-diagnostico" class="small-btn ghost" type="button" data-i18n="diagnosticRun">Comprobar instalación</button>
+        <span id="modelos-info" class="muted small" data-i18n="modelsHelp">Solo aparecen modelos ya descargados en Ollama.</span>
+      </div>
+      <div id="modelo-info" class="model-info" aria-live="polite"></div>
+      <div id="diagnostico-info" class="diagnostic-info hidden" aria-live="polite"></div>
+
+      <details class="templates-panel">
+        <summary><strong data-i18n="templatesTitle">Valores institucionales predefinidos</strong> <span class="muted small" data-i18n="templatesHint">— se aplicarán si el campo extraído viene vacío</span></summary>
+        <div class="templates-grid">
+          <label><span data-i18n="tplEditor">Editor</span><input type="text" id="tpl-editor" placeholder="p. ej. Ayuntamiento de…" /></label>
+          <label><span data-i18n="tplLugar">Lugar de publicación</span><input type="text" id="tpl-lugar" placeholder="p. ej. Madrid" /></label>
+          <label><span data-i18n="tplDLPrefix">Prefijo D.L.</span><input type="text" id="tpl-dl" placeholder="p. ej. M-" /></label>
+          <label><span data-i18n="tplSerie">Serie habitual</span><input type="text" id="tpl-serie" placeholder="p. ej. Colección…" /></label>
+        </div>
+        <div class="toolbar-row">
+          <button id="tpl-guardar" class="small-btn" type="button" data-i18n="templatesSave">Guardar como predeterminados</button>
+          <button id="tpl-limpiar" class="small-btn ghost" type="button" data-i18n="templatesClear">Limpiar</button>
+        </div>
+      </details>
+
       <p class="muted small" data-i18n="languageOutputNote">La propuesta se generará en el idioma seleccionado para la interfaz.</p>
       <button id="procesar" class="primary" type="button" data-i18n="process">Procesar</button>
     </section>
+
     <section id="resultados" class="card results hidden">
       <div class="result-head">
         <div><p class="eyebrow" data-i18n="reviewable">Propuesta revisable</p><h2 data-i18n="resultTitle">2. Resultado</h2></div>
-        <div class="actions"><button data-export="json" type="button">JSON</button><button data-export="csv" type="button">CSV</button><button data-export="isbd" type="button">ISBD</button><button data-export="marcxml" type="button">MARCXML</button><button id="auditoria" type="button" data-i18n="audit">Auditoría</button></div>
+        <div class="actions">
+          <button data-export="json" type="button">JSON</button>
+          <button data-export="csv" type="button">CSV</button>
+          <button data-export="isbd" type="button">ISBD</button>
+          <button data-export="marc-txt" type="button">MARC21 (txt)</button>
+          <button data-export="marcxml" type="button">MARCXML</button>
+          <button id="auditoria" type="button" data-i18n="audit">Auditoría</button>
+        </div>
       </div>
-      <div class="tabs"><button class="tab active" data-tab="campos" data-i18n="tabFields">Campos</button><button class="tab" data-tab="isbd" data-i18n="tabIsbd">Vista ISBD</button><button class="tab" data-tab="cobertura" data-i18n="tabCoverage">Cobertura</button><button class="tab" data-tab="avisos" data-i18n="tabWarnings">Avisos</button></div>
+      <div class="tabs">
+        <button class="tab active" data-tab="campos" data-i18n="tabFields">Campos</button>
+        <button class="tab" data-tab="isbd" data-i18n="tabIsbd">Vista ISBD</button>
+        <button class="tab" data-tab="marc" data-i18n="tabMarc">MARC21</button>
+        <button class="tab" data-tab="cobertura" data-i18n="tabCoverage">Cobertura</button>
+        <button class="tab" data-tab="avisos" data-i18n="tabWarnings">Avisos</button>
+      </div>
       <div id="tab-campos" class="tab-panel"></div>
-      <div id="tab-isbd" class="tab-panel hidden"><pre id="isbd-text"></pre></div>
+      <div id="tab-isbd" class="tab-panel hidden"></div>
+      <div id="tab-marc" class="tab-panel hidden"></div>
       <div id="tab-cobertura" class="tab-panel hidden"></div>
       <div id="tab-avisos" class="tab-panel hidden"></div>
     </section>
   </main>
+
+  <!-- Botones flotantes en esquina inferior derecha -->
+  <div class="fab-stack" role="toolbar" aria-label="Ayuda y opciones">
+    <button class="fab" id="fab-instrucciones" type="button" aria-label="Instrucciones rápidas">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+    </button>
+    <button class="fab" id="fab-normativa" type="button" aria-label="Normativa seguida">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>
+    </button>
+    <button class="fab" id="fab-atajos" type="button" aria-label="Atajos de teclado">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+    </button>
+    <button class="fab" id="fab-flotante" type="button" aria-label="Modo flotante (ventana lateral)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="13" height="14" rx="2"/><rect x="18" y="9" width="3" height="6" rx="1"/></svg>
+    </button>
+  </div>
+
+  <!-- Modales (ocultos por defecto) -->
+  <div id="modal-instrucciones" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-instrucciones-titulo">
+    <div class="modal">
+      <button class="modal-close icon-btn" type="button" aria-label="Cerrar">✕</button>
+      <h2 id="modal-instrucciones-titulo" data-i18n="modalInstrTitle">Cómo usar Tipo</h2>
+      <ol>
+        <li data-i18n="modalInstr1">Suba el libro completo en PDF, imágenes o DOCX. Tipo localiza por sí mismo las páginas donde están los datos.</li>
+        <li data-i18n="modalInstr2">Elija el idioma de salida y el modo: <em>Esencial</em> para los campos catalográficos básicos; <em>Completo</em> para todos los campos del esquema.</li>
+        <li data-i18n="modalInstr3">Opcionalmente, complete los <strong>Valores institucionales predefinidos</strong> para que se apliquen como fallback cuando un campo venga vacío.</li>
+        <li data-i18n="modalInstr4">Pulse <strong>Procesar</strong>. Tipo extrae los datos atómicos y ensambla los bloques ISBD por área.</li>
+        <li data-i18n="modalInstr5">Revise la pestaña <strong>Campos</strong>. Semáforo: verde = alta confianza, ámbar = revisar, rojo = baja.</li>
+        <li data-i18n="modalInstr6">Use <strong>Vista ISBD</strong> para validar la descripción ya con su puntuación. Al final aparece la ficha completa lista para copiar.</li>
+        <li data-i18n="modalInstr7">Use <strong>MARC21</strong> para ver el registro etiquetado y pegarlo directamente en su OPAC.</li>
+        <li data-i18n="modalInstr8">Exporte en el formato que necesite o copie cada campo/línea con su botón ⧉.</li>
+      </ol>
+      <h3 data-i18n="modalInstrLimitsTitle">Lo que Tipo NO hace</h3>
+      <ul>
+        <li data-i18n="modalInstrLimit1">No consulta catálogos externos ni autoridades.</li>
+        <li data-i18n="modalInstrLimit2">No crea puntos de acceso autorizados.</li>
+        <li data-i18n="modalInstrLimit3">No asigna materias normalizadas.</li>
+        <li data-i18n="modalInstrLimit4">No modifica sistemas bibliotecarios.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div id="modal-normativa" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-normativa-titulo">
+    <div class="modal">
+      <button class="modal-close icon-btn" type="button" aria-label="Cerrar">✕</button>
+      <h2 id="modal-normativa-titulo" data-i18n="modalNormTitle">Normativa aplicada</h2>
+      <p class="muted" data-i18n="modalNormIntro">Tipo emplea descripción ISBD por áreas y proyecta los campos atómicos a MARC21. Esta es la normativa de referencia que aplica el modelo y los exportadores deterministas.</p>
+
+      <h3 data-i18n="modalNormAreasTitle">Áreas ISBD cubiertas</h3>
+      <ul>
+        <li><strong>Área 0</strong> <span data-i18n="modalNormA0">— Forma del contenido y tipo de medio. En monografía impresa: "Texto (visual) : sin mediación".</span></li>
+        <li><strong>Área 1</strong> <span data-i18n="modalNormA1">— Título y mención de responsabilidad. Fuente: portada.</span></li>
+        <li><strong>Área 2</strong> <span data-i18n="modalNormA2">— Edición. Solo si hay mención explícita; reimpresión no es edición.</span></li>
+        <li><strong>Área 4</strong> <span data-i18n="modalNormA4">— Publicación, distribución. Fuente: portada / verso / colofón. Si la fecha solo consta en D.L. o ©, se antepone "D.L." o "cop.".</span></li>
+        <li><strong>Área 5</strong> <span data-i18n="modalNormA5">— Descripción física. Requiere observación directa del ejemplar.</span></li>
+        <li><strong>Área 6</strong> <span data-i18n="modalNormA6">— Serie. Entre paréntesis, con punto y coma antes del número.</span></li>
+        <li><strong>Área 7</strong> <span data-i18n="modalNormA7">— Notas. Breves y útiles. La ilustración de cubierta NO se anota.</span></li>
+        <li><strong>Área 8</strong> <span data-i18n="modalNormA8">— ISBN y depósito legal, una línea por identificador.</span></li>
+      </ul>
+
+      <h3 data-i18n="modalNormSourcesTitle">Jerarquía de fuentes</h3>
+      <ol>
+        <li data-i18n="modalNormSrc1">Portada: fuente principal de título y responsabilidad.</li>
+        <li data-i18n="modalNormSrc2">Verso de portada: fuente principal de edición, publicación, ©, ISBN, depósito legal.</li>
+        <li data-i18n="modalNormSrc3">Cubierta, lomo, colofón: fuentes complementarias.</li>
+        <li data-i18n="modalNormSrc4">Resto del material: solo como apoyo.</li>
+      </ol>
+
+      <h3 data-i18n="modalNormMarcTitle">Proyección a MARC21</h3>
+      <ul>
+        <li><kbd>020 $a</kbd> ISBN · <kbd>017 $a</kbd> D.L.</li>
+        <li><kbd>041</kbd> lengua y, si procede, $h idioma original</li>
+        <li><kbd>240</kbd> título uniforme / título original (si aplica)</li>
+        <li><kbd>245 0 _ $a $b $c</kbd> título, subtítulo, responsabilidad</li>
+        <li><kbd>250 $a</kbd> edición</li>
+        <li><kbd>264 _ 1 $a $b $c</kbd> lugar, editor, fecha</li>
+        <li><kbd>300 $a $b $c</kbd> extensión, ilustraciones, dimensiones</li>
+        <li><kbd>336 / 337 / 338</kbd> tipo de contenido / medio / soporte</li>
+        <li><kbd>490 0 $a</kbd> serie transcrita</li>
+        <li><kbd>500 / 504 / 520 / 546</kbd> notas (general, bibliografía, resumen, lengua)</li>
+      </ul>
+
+      <h3 data-i18n="modalNormScopeTitle">Alcance</h3>
+      <p data-i18n="modalNormScope">Tipo no crea puntos de acceso autorizados (campos 1xx, 7xx, 6xx, 110, 111). El profesional asigna el encabezamiento principal y los secundarios según el caso (autor único, obra colectiva, anónima, actas de congreso, etc.). Tipo proporciona los datos atómicos suficientes para que esa decisión sea inmediata.</p>
+    </div>
+  </div>
+
+  <div id="modal-atajos" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-atajos-titulo">
+    <div class="modal">
+      <button class="modal-close icon-btn" type="button" aria-label="Cerrar">✕</button>
+      <h2 id="modal-atajos-titulo" data-i18n="modalShortTitle">Atajos de teclado</h2>
+      <ul>
+        <li><kbd>Ctrl</kbd> + <kbd>Enter</kbd> <span data-i18n="modalShort1">— Procesar la subida actual.</span></li>
+        <li><kbd>Esc</kbd> <span data-i18n="modalShort2">— Cerrar el panel flotante abierto.</span></li>
+        <li><kbd>F1</kbd> <span data-i18n="modalShort3">— Abrir instrucciones.</span></li>
+        <li><kbd>F2</kbd> <span data-i18n="modalShort4">— Abrir normativa.</span></li>
+        <li><kbd>Ctrl</kbd> + <kbd>K</kbd> <span data-i18n="modalShort5">— Abrir ventana flotante lateral.</span></li>
+        <li><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> <span data-i18n="modalShort6">— Alternar tema claro / oscuro.</span></li>
+      </ul>
+    </div>
+  </div>
+
+
+  <div id="modal-perfil" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-perfil-titulo">
+    <div class="modal modal-wide">
+      <button class="modal-close icon-btn" type="button" aria-label="Cerrar">✕</button>
+      <h2 id="modal-perfil-titulo" data-i18n="profileTitle">Perfil y seguridad</h2>
+      <p id="perfil-resumen" class="muted small"></p>
+
+      <section class="profile-section">
+        <h3 data-i18n="changePasswordTitle">Cambiar contraseña</h3>
+        <div class="grid two">
+          <label><span data-i18n="currentPassword">Contraseña actual</span><input id="perfil-pass-actual" type="password" autocomplete="current-password" /></label>
+          <label><span data-i18n="newPassword">Nueva contraseña</span><input id="perfil-pass-nueva" type="password" autocomplete="new-password" /></label>
+        </div>
+        <button id="perfil-cambiar-pass" class="small-btn" type="button" data-i18n="changePasswordAction">Cambiar contraseña</button>
+      </section>
+
+      <section id="admin-usuarios" class="profile-section hidden">
+        <h3 data-i18n="userAdminTitle">Administración local de usuarios</h3>
+        <p class="muted small" data-i18n="recoveryHelp">Si se pierde la contraseña del administrador, use el panel de instalación de Windows: Gestionar acceso / Restablecer administrador.</p>
+        <div id="usuarios-lista" class="users-list"></div>
+        <details class="templates-panel" open>
+          <summary><strong data-i18n="createUserTitle">Crear usuario</strong></summary>
+          <div class="grid three">
+            <label><span data-i18n="authUser">Usuario</span><input id="nuevo-usuario" type="text" autocomplete="off" /></label>
+            <label><span data-i18n="authPassword">Contraseña</span><input id="nuevo-password" type="password" autocomplete="new-password" /></label>
+            <label><span data-i18n="roleLabel">Rol</span><select id="nuevo-rol"><option value="user">user</option><option value="admin">admin</option></select></label>
+          </div>
+          <button id="crear-usuario" class="small-btn" type="button" data-i18n="createUserAction">Crear usuario</button>
+        </details>
+      </section>
+
+      <div id="perfil-error" class="error hidden"></div>
+    </div>
+  </div>
+
   <script src="/app.js"></script>
 </body>
 </html>
+
+  <div id="pantalla-apagado" class="shutdown-screen hidden" role="status" aria-live="polite">
+    <div class="shutdown-card">
+      <img src="/img/tipo-logo-header.png" alt="Tipo" />
+      <h1 data-i18n="shutdownScreenTitle">Tipo se está apagando</h1>
+      <p data-i18n="shutdownScreenText">El backend local ha recibido la orden de apagado. Puede cerrar esta pestaña y, después, cerrar la ventana del panel o utilizar Detener/Desinstalar si lo necesita.</p>
+      <p class="muted" data-i18n="shutdownScreenHelp">Si vuelve a abrir Tipo desde el panel, el servicio arrancará de nuevo.</p>
+    </div>
+  </div>

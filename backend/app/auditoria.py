@@ -120,7 +120,28 @@ def generar_ficha_tecnica(
     propuesta: Any,
     deteccion: Any,
     sha256_documento: str | None,
+    incognito: bool = False,
 ) -> dict[str, Any]:
+    if incognito:
+        # En modo incógnito la ficha técnica solo deja constancia de que
+        # hubo procesamiento, sin metadatos del documento ni cuentas que
+        # puedan reidentificar el material.
+        return {
+            "formato": "tipo-ficha-tecnica-v1",
+            "aplicacion": {"nombre": APP_NAME, "version": APP_VERSION},
+            "peticion_id": peticion_id,
+            "generado": dt.datetime.now().isoformat(timespec="seconds"),
+            "modo_incognito": True,
+            "configuracion": {
+                "perfil": getattr(esquema, "norma", None),
+                "version_perfil": getattr(esquema, "version", None),
+                "modo": modo,
+                "idioma_salida": idioma_salida,
+                "modelo": modelo,
+                "consultas_externas": False,
+                "tipo_resultado": "propuesta_descriptiva_revisable",
+            },
+        }
     campos = list(getattr(propuesta, "campos", []) or [])
     estados = [_estado_evidencia(c) for c in campos]
     con_valor = sum(1 for c in campos if getattr(c, "valor", None) not in (None, "", []))
