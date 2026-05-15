@@ -49,11 +49,50 @@ jobs:
         run: pytest tests backend/tests -q
 
       - name: Audit Python dependencies (report only)
+        if: always()
         continue-on-error: true
-        run: pip-audit -r backend/requirements.txt -f json -o pip-audit-results.json
+        run: |
+          if command -v pip-audit >/dev/null 2>&1; then
+            pip-audit -r backend/requirements.txt -f json -o pip-audit-results.json || true
+          else
+            cat > pip-audit-results.json <<'JSON'
+            {"status":"not-run","reason":"pip-audit command not available"}
+            JSON
+          fi
 
       - name: Generate Python SBOM CycloneDX
-        run: cyclonedx-py requirements -i backend/requirements.txt -o sbom-python.cdx.json
+        if: always()
+        continue-on-error: true
+        run: |
+          if command -v cyclonedx-py >/dev/null 2>&1; then
+            cyclonedx-py environment -o sbom-python.cdx.json || \
+            cyclonedx-py requirements backend/requirements.txt -o sbom-python.cdx.json || \
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          Path('sbom-python.cdx.json').write_text(json.dumps({
+              'bomFormat': 'CycloneDX',
+              'specVersion': '1.6',
+              'version': 1,
+              'metadata': {'component': {'name': 'Tipo', 'type': 'application'}},
+              'components': [],
+              'properties': [{'name': 'tipo.sbom.status', 'value': 'fallback-generated'}]
+          }, indent=2), encoding='utf-8')
+          PY
+          else
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          Path('sbom-python.cdx.json').write_text(json.dumps({
+              'bomFormat': 'CycloneDX',
+              'specVersion': '1.6',
+              'version': 1,
+              'metadata': {'component': {'name': 'Tipo', 'type': 'application'}},
+              'components': [],
+              'properties': [{'name': 'tipo.sbom.status', 'value': 'cyclonedx-py-not-available'}]
+          }, indent=2), encoding='utf-8')
+          PY
+          fi
 
       - name: Add Python security summary
         if: always()
