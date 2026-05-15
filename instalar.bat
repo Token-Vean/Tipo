@@ -10,6 +10,9 @@ REM ============================================================================
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
+REM Usar IPv4 explícito evita fallos en Windows cuando localhost resuelve a ::1.
+set "TIPO_LOCAL_HOST=127.0.0.1"
+
 echo.
 echo Tipo 0.2.0-beta.7 - instalacion local
 echo ----------------------------------------
@@ -95,14 +98,14 @@ if not errorlevel 1 set "OLLAMA_EXE=ollama"
 if not defined OLLAMA_EXE if exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" set "OLLAMA_EXE=%LOCALAPPDATA%\Programs\Ollama\ollama.exe"
 if not defined OLLAMA_EXE if exist "%ProgramFiles%\Ollama\ollama.exe" set "OLLAMA_EXE=%ProgramFiles%\Ollama\ollama.exe"
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri 'http://localhost:11434/api/tags' -UseBasicParsing -TimeoutSec 3; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri 'http://127.0.0.1:11434/api/tags' -UseBasicParsing -TimeoutSec 3; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
 if not errorlevel 1 (
     set PERFIL=external
     set APP_SERVICE=app-external
-    echo    OK - Ollama instalado y arrancado ^(localhost:11434^).
+    echo    OK - Ollama instalado y arrancado ^(127.0.0.1:11434^).
     echo        Tipo usara tu instalacion local de Ollama.
 ) else if defined OLLAMA_EXE (
-    echo    AVISO - Ollama parece instalado, pero no esta arrancado en localhost:11434.
+    echo    AVISO - Ollama parece instalado, pero no esta arrancado en 127.0.0.1:11434.
     echo            Tipo continuara usando Ollama dentro de Docker.
     echo            No tienes que hacer nada para completar la instalacion.
 ) else (
@@ -290,7 +293,7 @@ set INTENTO=0
 
 :wait_loop
 set /a INTENTO+=1
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri 'http://localhost:!PUERTO!/api/estado' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri 'http://!TIPO_LOCAL_HOST!:!PUERTO!/api/estado' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
 if not errorlevel 1 goto wait_ok
 
 "!DOCKER!" ps --filter "name=tipo-app" --filter "status=exited" --format "{{.Names}}" | findstr "tipo-app" >nul 2>&1
@@ -335,14 +338,14 @@ echo.
 echo ----------------------------------------
 echo Instalacion completada.
 echo.
-echo URL: http://localhost:!PUERTO!
+echo URL: http://!TIPO_LOCAL_HOST!:!PUERTO!
 echo Perfil: !PERFIL!
 echo.
 echo En el primer arranque, Tipo pedira crear un usuario administrador local.
 echo Recuerda la contrasena: no se sube a ningun servicio externo.
 echo.
 
-start "" "http://localhost:!PUERTO!"
+start "" "http://!TIPO_LOCAL_HOST!:!PUERTO!"
 
 echo Puedes dejar esta ventana abierta mientras trabajas con Tipo.
 echo Si apagas Tipo desde la interfaz web, podras cerrar esta ventana o usar el panel.
