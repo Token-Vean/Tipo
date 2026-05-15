@@ -1,4 +1,4 @@
-# Limitaciones conocidas — Tipo v0.2.0-beta.6
+# Limitaciones conocidas — Tipo v0.2.0-beta.7
 
 - Versión inicial orientada a monografías impresas modernas.
 - ISBD es una vista derivada solo lectura.

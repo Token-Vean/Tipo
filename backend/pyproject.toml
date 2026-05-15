@@ -1,6 +1,6 @@
 [project]
 name = "tipo"
-version = "0.2.0b6"
+version = "0.2.0b7"
 description = "Asistente local de extracción bibliográfica para monografías impresas"
 readme = "../README.md"
 requires-python = ">=3.11"

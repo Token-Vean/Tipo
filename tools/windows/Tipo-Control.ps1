@@ -353,7 +353,7 @@ $iconPath = Join-Path $Root "Tipo.ico"
 if (Test-Path $iconPath) { try { $form.Icon = New-Object System.Drawing.Icon($iconPath) } catch {} }
 
 $title = New-Object System.Windows.Forms.Label
-$title.Text = "Tipo 0.2.0-beta.6 - instalacion local segura"
+$title.Text = "Tipo 0.2.0-beta.7 - instalacion local segura"
 $title.Font = New-Object System.Drawing.Font("Segoe UI", 17, [System.Drawing.FontStyle]::Bold)
 $title.Location = New-Object System.Drawing.Point(22, 18)
 $title.Size = New-Object System.Drawing.Size(780, 34)

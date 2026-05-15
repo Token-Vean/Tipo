@@ -11,7 +11,7 @@ setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo.
-echo Tipo 0.2.0-beta.6 - instalacion local
+echo Tipo 0.2.0-beta.7 - instalacion local
 echo ----------------------------------------
 echo.
 

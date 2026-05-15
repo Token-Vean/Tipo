@@ -1,5 +1,5 @@
 """
-Utilidades bibliográficas ligeras para Tipo v0.2.0-beta.6.
+Utilidades bibliográficas ligeras para Tipo v0.2.0-beta.7.
 
 No se crean puntos de acceso autorizados ni se consultan fuentes externas.
 """

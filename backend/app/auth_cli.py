@@ -11,7 +11,7 @@ import argparse
 import getpass
 import os
 import sys
-from typing import Sequence
+from collections.abc import Sequence
 
 from . import auth
 
