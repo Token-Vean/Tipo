@@ -9,5 +9,5 @@ archivística.
 from __future__ import annotations
 
 APP_NAME = "Tipo"
-APP_VERSION = "0.2.0-beta.7"
+APP_VERSION = "0.3.0-beta.1"
 APP_AGENT = f"{APP_NAME} v{APP_VERSION}"

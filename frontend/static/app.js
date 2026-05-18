@@ -1,7 +1,13 @@
 /* ============================================================================
- * Tipo — frontend logic v0.2.0-beta.7
+ * Tipo — frontend logic
+ * BUILD: 2026-05-17 lote2  (versión con navegador de lote y descargas por lote)
+ * Si en DevTools no ves esta cabecera, el navegador está sirviendo una versión
+ * cacheada: pulsa Ctrl+F5 (o Cmd+Shift+R en macOS) para forzar recarga.
  * Sin dependencias externas. Toda la lógica de UI vive aquí.
  * ============================================================================ */
+
+const TIPO_BUILD = '2026-05-17 lote2';
+console.info('Tipo frontend BUILD:', TIPO_BUILD);
 
 let csrfToken = null;
 let ultimoResultado = null;
@@ -12,7 +18,13 @@ let modelosOllama = [];
 let modelosDetalle = {};
 let modeloSeleccionado = "gemma4:e4b";
 
-/* ----- i18n ----- */
+/* ----- i18n -----
+ * Estrategia:
+ *   - Los textos pueden incluir HTML mínimo (<em>, <strong>, <kbd>) controlado
+ *     por nosotros. aplicarIdioma() los inyecta con innerHTML solo si la clave
+ *     existe; si no, deja el HTML original del index.html intacto.
+ *   - Todas las claves usadas por data-i18n deben estar declaradas aquí.
+ */
 const I18N = {
   es: {
     languageLabel: 'Idioma',
@@ -33,12 +45,18 @@ const I18N = {
     notice: 'Tipo no consulta catálogos externos, no crea puntos de acceso autorizados, no asigna materias normalizadas y no modifica sistemas bibliotecarios.',
     sourcesTitle: '1. El libro',
     sourcesHelp: 'Suba el libro completo. No hace falta separar portada, verso o colofón: Tipo localiza internamente las zonas relevantes y descarta el cuerpo. También puede subir imágenes sueltas si lo prefiere.',
+    uploadModeLabel: 'Modo de subida',
+    uploadModeOne: 'Un solo libro (varias páginas o imágenes)',
+    uploadModeMany: 'Varios libros — uno por fichero',
+    uploadModeManyZip: 'Varios libros — uno por ZIP',
+    uploadModeHelp: 'Elija «Varios libros» para procesar varios títulos en serie y poder navegar entre los resultados.',
     modeLabel: 'Modo',
     modeEssential: 'Esencial',
     modeComplete: 'Completo',
     languageOutputNote: 'La propuesta se generará en el idioma seleccionado para la interfaz.',
     process: 'Procesar',
     processing: 'Procesando…',
+    processBatch: 'Procesar lote',
     reviewable: 'Propuesta revisable',
     resultTitle: '2. Resultado',
     audit: 'Auditoría',
@@ -80,17 +98,83 @@ const I18N = {
     templatesClear: 'Limpiar',
     templatesSaved: 'Valores guardados.',
     templatesApplied: 'Se aplicaron valores institucionales en campos vacíos.',
+    /* Modal "Cómo usar Tipo" */
     modalInstrTitle: 'Cómo usar Tipo',
+    modalInstr1: 'Suba el libro completo en PDF, imágenes o DOCX. Tipo localiza por sí mismo las páginas donde están los datos.',
+    modalInstr2: 'Elija el idioma de salida y el modo: <em>Esencial</em> para los campos catalográficos básicos; <em>Completo</em> para todos los campos del esquema.',
+    modalInstr3: 'Opcionalmente, complete los <strong>Valores institucionales predefinidos</strong> para que se apliquen como fallback cuando un campo venga vacío.',
+    modalInstr4: 'Pulse <strong>Procesar</strong>. Tipo extrae los datos atómicos y ensambla los bloques ISBD por área.',
+    modalInstr5: 'Revise la pestaña <strong>Campos</strong>. Semáforo: verde = alta confianza, ámbar = revisar, rojo = baja.',
+    modalInstr6: 'Use <strong>Vista ISBD</strong> para validar la descripción ya con su puntuación. Al final aparece la ficha completa lista para copiar.',
+    modalInstr7: 'Use <strong>MARC21</strong> para ver el registro etiquetado y pegarlo directamente en su OPAC.',
+    modalInstr8: 'Exporte en el formato que necesite o copie cada campo/línea con su botón ⧉.',
     modalInstrLimitsTitle: 'Lo que Tipo NO hace',
+    modalInstrLimit1: 'No consulta catálogos externos ni autoridades.',
+    modalInstrLimit2: 'No crea puntos de acceso autorizados.',
+    modalInstrLimit3: 'No asigna materias normalizadas.',
+    modalInstrLimit4: 'No modifica sistemas bibliotecarios.',
+    /* Modal "Normativa aplicada" */
     modalNormTitle: 'Normativa aplicada',
-    modalNormIntro: 'Tipo emplea descripción ISBD por áreas y proyecta los campos atómicos a MARC21.',
+    modalNormIntro: 'Tipo emplea descripción ISBD por áreas y proyecta los campos atómicos a MARC21. Esta es la normativa de referencia que aplica el modelo y los exportadores deterministas.',
     modalNormAreasTitle: 'Áreas ISBD cubiertas',
+    modalNormA0: '— Forma del contenido y tipo de medio. En monografía impresa: «Texto (visual) : sin mediación».',
+    modalNormA1: '— Título y mención de responsabilidad. Fuente: portada.',
+    modalNormA2: '— Edición. Solo si hay mención explícita; reimpresión no es edición.',
+    modalNormA4: '— Publicación, distribución. Fuente: portada / verso / colofón. Si la fecha solo consta en D.L. o ©, se antepone «D.L.» o «cop.».',
+    modalNormA5: '— Descripción física. Requiere observación directa del ejemplar.',
+    modalNormA6: '— Serie. Entre paréntesis, con punto y coma antes del número.',
+    modalNormA7: '— Notas. Breves y útiles. La ilustración de cubierta NO se anota.',
+    modalNormA8: '— ISBN y depósito legal, una línea por identificador.',
     modalNormSourcesTitle: 'Jerarquía de fuentes',
+    modalNormSrc1: 'Portada: fuente principal de título y responsabilidad.',
+    modalNormSrc2: 'Verso de portada: fuente principal de edición, publicación, ©, ISBN, depósito legal.',
+    modalNormSrc3: 'Cubierta, lomo, colofón: fuentes complementarias.',
+    modalNormSrc4: 'Resto del material: solo como apoyo.',
     modalNormMarcTitle: 'Proyección a MARC21',
     modalNormScopeTitle: 'Alcance',
+    modalNormScope: 'Tipo no crea puntos de acceso autorizados (campos 1xx, 7xx, 6xx, 110, 111). El profesional asigna el encabezamiento principal y los secundarios según el caso (autor único, obra colectiva, anónima, actas de congreso, etc.). Tipo proporciona los datos atómicos suficientes para que esa decisión sea inmediata.',
+    /* Modal "Atajos de teclado" */
     modalShortTitle: 'Atajos de teclado',
+    modalShort1: '— Procesar la subida actual.',
+    modalShort2: '— Cerrar el panel flotante abierto.',
+    modalShort3: '— Abrir instrucciones.',
+    modalShort4: '— Abrir normativa.',
+    modalShort5: '— Abrir ventana flotante lateral.',
+    modalShort6: '— Alternar tema claro / oscuro.',
+    /* Navegador de lote */
+    loteBook: 'Libro',
+    loteOf: 'de',
+    loteListos: 'listos',
+    loteErrores: 'errores',
+    loteEstado: 'estado',
+    loteEstadoPendiente: 'pendiente',
+    loteEstadoEnProceso: 'en proceso',
+    loteEstadoFinalizado: 'finalizado',
+    loteEstadoCancelado: 'cancelado',
+    loteCancel: 'Cancelar lote',
+    loteCancelConfirm: 'Se cancelarán los libros que aún no se han procesado. El libro en curso terminará. ¿Continuar?',
+    loteCancelFailed: 'No se pudo cancelar el lote',
+    loteRefreshing: 'Actualizando…',
+    loteItemPending: 'Este libro está pendiente o en proceso. Se actualizará automáticamente al terminar.',
+    loteItemCancelled: 'Este libro fue cancelado antes de procesarse.',
+    loteItemError: 'Error durante el procesamiento.',
+    lotePrevBook: 'Libro anterior',
+    loteNextBook: 'Libro siguiente',
+    loteCreating: 'Subiendo y encolando libros…',
+    loteCreated: 'Lote creado: {n} libros encolados.',
+    loteCreateFailed: 'No se pudo crear el lote',
+    loteExportZip: 'Descargar lote (ZIP)',
+    loteExportLabel: 'Descargar lote…',
+    loteExportZipFmt: 'ZIP completo (todos los formatos + manifiesto)',
+    loteExportMarcxml: 'MARCXML (colección)',
+    loteExportMarcTxt: 'MARC21 texto (colección)',
+    loteExportIsbd: 'ISBD (colección)',
+    loteExportJson: 'JSON (colección)',
+    loteExportCsv: 'CSV (una fila por libro)',
+    /* Incógnito */
     incognitoOn: 'Modo incógnito activado — no se registrará auditoría detallada.',
     incognitoOff: 'Modo normal — la auditoría registra el procesamiento.',
+    /* Autenticación */
     authTitleSetup: 'Configuración inicial de acceso',
     authTitleLogin: 'Acceso a Tipo',
     authIntroSetup: 'Cree el primer usuario administrador local. La contraseña se guarda cifrada en el volumen local de Tipo.',
@@ -143,7 +227,10 @@ const I18N = {
     diagnosticHelp: 'Comprueba backend, configuración local y límites sin enviar documentos.',
     scopeBetaTitle: 'Beta especializada',
     scopeBetaText: 'Esta versión está pensada para monografía moderna impresa. No está optimizada para manuscritos, fondo antiguo, publicaciones seriadas ni recursos electrónicos.',
-    forgotPasswordHelp: '¿Ha perdido la contraseña? Use el panel de instalación: Gestionar acceso / Restablecer administrador.'
+    forgotPasswordHelp: '¿Ha perdido la contraseña? Use el panel de instalación: Gestionar acceso / Restablecer administrador.',
+    /* Footer */
+    footerLine1: 'Herramienta local de catalogación asistida por IA para monografía moderna impresa.',
+    footerLine2: 'Autoría y desarrollo conceptual: <strong>Víctor Villapalos</strong>.'
   },
   en: {
     languageLabel: 'Language',
@@ -163,13 +250,19 @@ const I18N = {
     heroText: 'Upload the whole book and Tipo will locate the zones with descriptive data, proposing a reviewable structured description. Processing runs locally via Ollama.',
     notice: 'Tipo does not consult external catalogs, does not create authorized access points, does not assign normalized subjects and does not modify library systems.',
     sourcesTitle: '1. The book',
-    sourcesHelp: 'Upload the whole book. No need to separate title page, verso or colophon: Tipo locates the relevant zones internally and discards the body. You may also upload single page images if preferred.',
+    sourcesHelp: 'Upload the whole book. No need to split title page, verso or colophon: Tipo locates the relevant zones internally and discards the body. You may also upload individual images if you prefer.',
+    uploadModeLabel: 'Upload mode',
+    uploadModeOne: 'A single book (multiple pages or images)',
+    uploadModeMany: 'Several books — one per file',
+    uploadModeManyZip: 'Several books — one per ZIP',
+    uploadModeHelp: 'Choose “Several books” to process several titles in a row and navigate between results.',
     modeLabel: 'Mode',
     modeEssential: 'Essential',
     modeComplete: 'Complete',
     languageOutputNote: 'The proposal will be generated in the language selected for the interface.',
     process: 'Process',
     processing: 'Processing…',
+    processBatch: 'Process batch',
     reviewable: 'Reviewable proposal',
     resultTitle: '2. Result',
     audit: 'Audit',
@@ -211,15 +304,79 @@ const I18N = {
     templatesClear: 'Clear',
     templatesSaved: 'Defaults saved.',
     templatesApplied: 'Institutional defaults applied to empty fields.',
+    /* Modal "How to use Tipo" */
     modalInstrTitle: 'How to use Tipo',
+    modalInstr1: 'Upload the whole book as PDF, images or DOCX. Tipo locates the pages where the data lives on its own.',
+    modalInstr2: 'Choose the output language and the mode: <em>Essential</em> for the basic cataloguing fields; <em>Complete</em> for every field in the schema.',
+    modalInstr3: 'Optionally, fill in the <strong>Institutional default values</strong> so they apply as a fallback when a field comes back empty.',
+    modalInstr4: 'Press <strong>Process</strong>. Tipo extracts the atomic data and assembles the ISBD blocks per area.',
+    modalInstr5: 'Review the <strong>Fields</strong> tab. Traffic-light: green = high confidence, amber = review, red = low.',
+    modalInstr6: 'Use <strong>ISBD view</strong> to validate the description with its punctuation. The full record ready to copy appears at the bottom.',
+    modalInstr7: 'Use <strong>MARC21</strong> to see the tagged record and paste it straight into your OPAC.',
+    modalInstr8: 'Export in the format you need or copy each field / line with its ⧉ button.',
     modalInstrLimitsTitle: 'What Tipo does NOT do',
+    modalInstrLimit1: 'Does not query external catalogues or authorities.',
+    modalInstrLimit2: 'Does not create authorised access points.',
+    modalInstrLimit3: 'Does not assign normalised subject headings.',
+    modalInstrLimit4: 'Does not modify library systems.',
+    /* Modal "Applied standards" */
     modalNormTitle: 'Applied standards',
-    modalNormIntro: 'Tipo uses ISBD area-based description and projects atomic fields to MARC21.',
+    modalNormIntro: 'Tipo uses ISBD area-based description and projects atomic fields to MARC21. These are the reference standards applied by the model and the deterministic exporters.',
     modalNormAreasTitle: 'ISBD areas covered',
+    modalNormA0: '— Content form and media type. In printed monographs: “Text (visual) : unmediated”.',
+    modalNormA1: '— Title and statement of responsibility. Source: title page.',
+    modalNormA2: '— Edition. Only if explicitly stated; a reprint is not an edition.',
+    modalNormA4: '— Publication, distribution. Source: title page / verso / colophon. If the date appears only in the legal deposit or ©, “D.L.” or “cop.” is prepended.',
+    modalNormA5: '— Physical description. Requires direct observation of the item.',
+    modalNormA6: '— Series. In parentheses, with a semicolon before the number.',
+    modalNormA7: '— Notes. Brief and useful. Cover illustration is NOT recorded.',
+    modalNormA8: '— ISBN and legal deposit, one line per identifier.',
     modalNormSourcesTitle: 'Source hierarchy',
+    modalNormSrc1: 'Title page: main source for title and responsibility.',
+    modalNormSrc2: 'Verso of title page: main source for edition, publication, ©, ISBN and legal deposit.',
+    modalNormSrc3: 'Cover, spine, colophon: complementary sources.',
+    modalNormSrc4: 'Rest of the item: as support only.',
     modalNormMarcTitle: 'MARC21 projection',
     modalNormScopeTitle: 'Scope',
+    modalNormScope: 'Tipo does not create authorised access points (1xx, 7xx, 6xx, 110, 111). The professional assigns the main and added entries depending on the case (single author, collective work, anonymous, conference proceedings, etc.). Tipo provides the atomic data sufficient for that decision to be immediate.',
+    /* Modal "Keyboard shortcuts" */
     modalShortTitle: 'Keyboard shortcuts',
+    modalShort1: '— Process the current upload.',
+    modalShort2: '— Close the open floating panel.',
+    modalShort3: '— Open instructions.',
+    modalShort4: '— Open standards.',
+    modalShort5: '— Open side floating window.',
+    modalShort6: '— Toggle light / dark theme.',
+    /* Batch navigator */
+    loteBook: 'Book',
+    loteOf: 'of',
+    loteListos: 'ready',
+    loteErrores: 'errors',
+    loteEstado: 'status',
+    loteEstadoPendiente: 'pending',
+    loteEstadoEnProceso: 'in progress',
+    loteEstadoFinalizado: 'finished',
+    loteEstadoCancelado: 'cancelled',
+    loteCancel: 'Cancel batch',
+    loteCancelConfirm: 'Pending books in the batch will be cancelled. The book currently being processed will finish. Continue?',
+    loteCancelFailed: 'Could not cancel the batch',
+    loteRefreshing: 'Refreshing…',
+    loteItemPending: 'This book is pending or being processed. It will be updated automatically when it finishes.',
+    loteItemCancelled: 'This book was cancelled before processing.',
+    loteItemError: 'Error during processing.',
+    lotePrevBook: 'Previous book',
+    loteNextBook: 'Next book',
+    loteCreating: 'Uploading and queueing books…',
+    loteCreated: 'Batch created: {n} books queued.',
+    loteCreateFailed: 'Could not create the batch',
+    loteExportZip: 'Download batch (ZIP)',
+    loteExportLabel: 'Download batch…',
+    loteExportZipFmt: 'Full ZIP (all formats + manifest)',
+    loteExportMarcxml: 'MARCXML (collection)',
+    loteExportMarcTxt: 'MARC21 text (collection)',
+    loteExportIsbd: 'ISBD (collection)',
+    loteExportJson: 'JSON (collection)',
+    loteExportCsv: 'CSV (one row per book)',
     incognitoOn: 'Incognito mode on — no detailed audit will be kept.',
     incognitoOff: 'Normal mode — audit records the run.',
     authTitleSetup: 'Initial access setup',
@@ -274,7 +431,9 @@ const I18N = {
     diagnosticHelp: 'Checks backend, local configuration and limits without sending documents.',
     scopeBetaTitle: 'Specialised beta',
     scopeBetaText: 'This version is designed for modern printed monographs. It is not optimised for manuscripts, rare books, serials or electronic resources.',
-    forgotPasswordHelp: 'Lost the password? Use the installation panel: Access management / Reset administrator.'
+    forgotPasswordHelp: 'Lost the password? Use the installation panel: Access management / Reset administrator.',
+    footerLine1: 'Local tool for AI-assisted cataloguing of modern printed monographs.',
+    footerLine2: 'Authorship and conceptual development: <strong>Víctor Villapalos</strong>.'
   }
 };
 
@@ -382,7 +541,21 @@ function cambiarIdioma(ev) {
 }
 function aplicarIdioma() {
   document.documentElement.lang = currentLang;
-  $$('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  // Defensivo: solo sustituye el contenido del elemento si existe una traducción
+  // en el idioma actual o, como fallback, en español. Si la clave no existe,
+  // se deja el HTML original del documento intacto (preserva <em>, <strong>,
+  // <kbd>, etc.). Como las cadenas del diccionario son estáticas y controladas
+  // por nosotros, se inyectan con innerHTML para conservar emphasis.
+  $$('[data-i18n]').forEach(el => {
+    const clave = el.dataset.i18n;
+    const valor =
+      (I18N[currentLang] && Object.prototype.hasOwnProperty.call(I18N[currentLang], clave) && I18N[currentLang][clave]) ||
+      (I18N.es && Object.prototype.hasOwnProperty.call(I18N.es, clave) && I18N.es[clave]) ||
+      null;
+    if (valor != null) {
+      el.innerHTML = valor;
+    }
+  });
 }
 
 /* ===========================================================================
@@ -786,12 +959,27 @@ function renderListaFicheros() {
 
 /* ===========================================================================
  * Procesar
+ * Si modo-subida = "uno" → /api/describir (comportamiento clásico, varios
+ *   ficheros forman UN libro).
+ * Si modo-subida = "lote_fichero" o "lote_zip" → /api/lote y se delega en
+ *   abrirLote(lote_id) para mostrar el navegador entre libros.
  * =========================================================================== */
 async function procesar() {
   const files = Array.from($('#ficheros').files || []);
   if (!files.length) { alert(t('noFiles')); return; }
+  const modoSubida = ($('#modo-subida') && $('#modo-subida').value) || 'uno';
   $('#procesar').disabled = true;
   $('#procesar').textContent = t('processing');
+
+  if (modoSubida === 'uno') {
+    await procesarUno(files);
+  } else {
+    const agrupacion = (modoSubida === 'lote_zip') ? 'un_libro_por_zip' : 'un_libro_por_fichero';
+    await procesarLote(files, agrupacion);
+  }
+}
+
+async function procesarUno(files) {
   const fd = new FormData();
   files.forEach(f => fd.append('ficheros', f));
   fd.append('norma', 'marc21-monografias');
@@ -800,6 +988,8 @@ async function procesar() {
   fd.append('modelo', $('#modelo-ollama').value || modeloSeleccionado || 'gemma4:e4b');
   if (modoIncognito) fd.append('incognito', '1');
   try {
+    // Si había un lote abierto, lo cerramos primero para liberar el navegador.
+    if (typeof cerrarLote === 'function') cerrarLote();
     const r = await fetch('/api/describir', {
       method: 'POST',
       credentials: 'same-origin',
@@ -814,6 +1004,48 @@ async function procesar() {
   } catch (e) {
     $('#resultados').classList.remove('hidden');
     $('#tab-campos').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+  } finally {
+    $('#procesar').disabled = false;
+    $('#procesar').textContent = t('process');
+  }
+}
+
+async function procesarLote(files, agrupacion) {
+  const fd = new FormData();
+  files.forEach(f => fd.append('ficheros', f));
+  fd.append('norma', 'marc21-monografias');
+  fd.append('modo', $('#modo').value);
+  fd.append('idioma_salida', currentLang);
+  fd.append('modelo', $('#modelo-ollama').value || modeloSeleccionado || 'gemma4:e4b');
+  fd.append('agrupacion', agrupacion);
+  if (modoIncognito) fd.append('incognito', '1');
+  const estado = $('#estado');
+  const estadoPrev = estado.textContent;
+  const statePrev = estado.dataset.state;
+  estado.textContent = t('loteCreating');
+  estado.dataset.state = 'ready';
+  try {
+    const r = await fetch('/api/lote', {
+      method: 'POST',
+      credentials: 'same-origin',
+      referrerPolicy: 'same-origin',
+      headers: { 'X-CSRF-Token': csrfToken || '' },
+      body: fd
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || t('loteCreateFailed'));
+    const datos = await r.json();
+    toast(t('loteCreated').replace('{n}', String(files.length)));
+    // Abrir el navegador del lote y empezar el polling.
+    if (typeof abrirLote === 'function') {
+      await abrirLote(datos.lote_id);
+    } else {
+      alert('El módulo del navegador de lote no está cargado.');
+    }
+  } catch (e) {
+    estado.textContent = estadoPrev;
+    estado.dataset.state = statePrev || 'ready';
+    $('#resultados').classList.remove('hidden');
+    $('#tab-campos').innerHTML = `<div class="error">${escapeHtml(t('loteCreateFailed'))}: ${escapeHtml(e.message)}</div>`;
   } finally {
     $('#procesar').disabled = false;
     $('#procesar').textContent = t('process');
@@ -1267,5 +1499,483 @@ function toast(msg) {
   estado.dataset.state = 'ready';
   setTimeout(() => { estado.textContent = previo; estado.dataset.state = estadoPrev || 'ready'; }, 1800);
 }
+
+/* ===========================================================================
+ * Navegador de resultados de lote
+ * ---------------------------------------------------------------------------
+ * Se monta dentro de #resultados, encima de .result-head.
+ * Polling automático cada 2,5 s mientras el lote está pendiente/en_proceso.
+ * Reutiliza renderResultado() y ultimoResultado del propio app.js.
+ * =========================================================================== */
+(function () {
+  const loteState = {
+    id: null,
+    items: [],
+    idx: 0,
+    cache: {},
+    pollingHandle: null,
+    lote: null,
+  };
+  const POLLING_MS = 2500;
+
+  function inyectarCss() {
+    if (document.getElementById('lote-nav-css')) return;
+    const css = `
+      #lote-nav {
+        display: none;
+        gap: 0.75rem;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 0.75rem 1rem;
+        margin: 0.5rem 0 1rem;
+        border: 1px solid var(--line, #d0d4dc);
+        border-radius: 12px;
+        background: var(--bg-soft, #fafbfc);
+      }
+      #lote-nav.visible { display: flex; }
+      #lote-nav .lote-info {
+        font-weight: 600;
+        margin-right: auto;
+        font-size: 0.95rem;
+        color: var(--text, inherit);
+      }
+      #lote-nav .lote-info small {
+        display: block;
+        font-weight: 400;
+        font-size: 0.78rem;
+        color: var(--muted, #6c7280);
+      }
+      #lote-nav .lote-chips {
+        display: flex;
+        gap: 0.35rem;
+        flex-wrap: wrap;
+        max-width: 100%;
+        overflow-x: auto;
+        padding: 0.15rem 0;
+      }
+      #lote-nav .lote-chip {
+        min-width: 2.1rem;
+        height: 2.1rem;
+        padding: 0 0.55rem;
+        border-radius: 999px;
+        border: 1px solid var(--line, #d0d4dc);
+        background: var(--card, #fff);
+        color: var(--text, #111);
+        font-variant-numeric: tabular-nums;
+        font-size: 0.9rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+        transition: transform 0.05s, border-color 0.1s;
+      }
+      #lote-nav .lote-chip:hover { transform: translateY(-1px); }
+      #lote-nav .lote-chip[aria-pressed="true"] {
+        border-width: 2px;
+        border-color: var(--brand, #862019);
+        font-weight: 600;
+      }
+      #lote-nav .lote-chip[data-estado="pendiente"]   { color: #5a6473; background: #f1f3f5; }
+      #lote-nav .lote-chip[data-estado="en_proceso"]  { color: #7a4b00; background: #fff3cd;
+        animation: lote-pulse 1.4s ease-in-out infinite; }
+      #lote-nav .lote-chip[data-estado="listo"]       { color: #0c5132; background: #d4edda; }
+      #lote-nav .lote-chip[data-estado="error"]       { color: #842029; background: #f8d7da; }
+      #lote-nav .lote-chip[data-estado="cancelado"]   { color: #6c757d; background: #e9ecef;
+        text-decoration: line-through; }
+      @keyframes lote-pulse {
+        0%, 100% { opacity: 1; }
+        50%      { opacity: 0.55; }
+      }
+      #lote-nav .lote-chip .estado-icono { font-size: 0.78rem; opacity: 0.85; }
+      #lote-nav .lote-flecha {
+        background: var(--card, #fff);
+        border: 1px solid var(--line, #d0d4dc);
+        border-radius: 999px;
+        width: 2.1rem;
+        height: 2.1rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+      }
+      #lote-nav .lote-flecha:disabled { opacity: 0.4; cursor: not-allowed; }
+      #lote-nav .lote-spinner {
+        font-size: 0.78rem;
+        color: var(--muted, #6c7280);
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+      #lote-nav.refrescando .lote-spinner { opacity: 1; }
+      #lote-nav .lote-acciones { display: flex; gap: 0.35rem; margin-left: 0.5rem; }
+      #lote-nav .lote-acciones button {
+        background: var(--card, #fff);
+        border: 1px solid var(--line, #d0d4dc);
+        border-radius: 8px;
+        padding: 0.35rem 0.6rem;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      #lote-nav .lote-acciones button.danger { color: #842029; border-color: #f1aeb5; }
+      #lote-nav .lote-acciones .lote-descargar {
+        background: var(--card, #fff);
+        border: 1px solid var(--line, #d0d4dc);
+        border-radius: 8px;
+        padding: 0.35rem 0.5rem;
+        font-size: 0.85rem;
+        cursor: pointer;
+        max-width: 280px;
+      }
+      .lote-error-panel {
+        padding: 1rem;
+        border: 1px solid #f1aeb5;
+        background: #f8d7da;
+        border-radius: 10px;
+        color: #842029;
+      }
+      .lote-pendiente-panel {
+        padding: 1rem;
+        border: 1px dashed var(--line, #d0d4dc);
+        background: var(--bg-soft, #fafbfc);
+        border-radius: 10px;
+        color: var(--muted, #6c7280);
+      }
+    `;
+    const style = document.createElement('style');
+    style.id = 'lote-nav-css';
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+
+  function asegurarComponente() {
+    inyectarCss();
+    let nav = document.getElementById('lote-nav');
+    if (nav) return nav;
+    const resultados = document.getElementById('resultados');
+    if (!resultados) return null;
+    nav = document.createElement('div');
+    nav.id = 'lote-nav';
+    nav.setAttribute('role', 'navigation');
+    nav.setAttribute('aria-label', 'Navegación entre libros del lote');
+    nav.innerHTML = `
+      <div class="lote-info">
+        <span class="lote-titulo">Lote</span>
+        <small class="lote-detalle"></small>
+      </div>
+      <button type="button" class="lote-flecha" data-direccion="-1" aria-label="${escapeAttr(t('lotePrevBook'))}">◀</button>
+      <div class="lote-chips" role="tablist"></div>
+      <button type="button" class="lote-flecha" data-direccion="1" aria-label="${escapeAttr(t('loteNextBook'))}">▶</button>
+      <span class="lote-spinner" aria-live="polite">${escapeHtml(t('loteRefreshing'))}</span>
+      <div class="lote-acciones">
+        <select class="lote-descargar" aria-label="${escapeAttr(t('loteExportZip'))}">
+          <option value="" disabled selected>${escapeHtml(t('loteExportLabel'))}</option>
+          <option value="zip">${escapeHtml(t('loteExportZipFmt'))}</option>
+          <option value="marcxml">${escapeHtml(t('loteExportMarcxml'))}</option>
+          <option value="marc-txt">${escapeHtml(t('loteExportMarcTxt'))}</option>
+          <option value="isbd">${escapeHtml(t('loteExportIsbd'))}</option>
+          <option value="json">${escapeHtml(t('loteExportJson'))}</option>
+          <option value="csv">${escapeHtml(t('loteExportCsv'))}</option>
+        </select>
+        <button type="button" class="lote-cancelar danger">${escapeHtml(t('loteCancel'))}</button>
+      </div>
+    `;
+    const head = resultados.querySelector('.result-head');
+    if (head) resultados.insertBefore(nav, head);
+    else resultados.prepend(nav);
+
+    nav.addEventListener('click', (ev) => {
+      const chip = ev.target.closest('.lote-chip');
+      if (chip) {
+        const idx = parseInt(chip.dataset.idx, 10);
+        if (!isNaN(idx)) mostrarItemDelLote(idx);
+        return;
+      }
+      const flecha = ev.target.closest('.lote-flecha');
+      if (flecha) {
+        const delta = parseInt(flecha.dataset.direccion, 10) || 0;
+        mostrarItemDelLote(loteState.idx + delta);
+        return;
+      }
+      if (ev.target.closest('.lote-cancelar')) {
+        cancelarLoteActual();
+      }
+    });
+
+    nav.addEventListener('change', (ev) => {
+      const sel = ev.target.closest('.lote-descargar');
+      if (!sel) return;
+      const formato = sel.value;
+      if (!formato) return;
+      descargarLote(formato);
+      // Devolver el select al estado inicial.
+      sel.selectedIndex = 0;
+    });
+
+    document.addEventListener('keydown', manejarTeclaLote);
+    return nav;
+  }
+
+  function manejarTeclaLote(ev) {
+    if (!loteState.id) return;
+    const tgt = ev.target;
+    if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
+    if (ev.key === 'ArrowLeft')  { mostrarItemDelLote(loteState.idx - 1); ev.preventDefault(); }
+    if (ev.key === 'ArrowRight') { mostrarItemDelLote(loteState.idx + 1); ev.preventDefault(); }
+  }
+
+  function renderNavegador() {
+    const nav = asegurarComponente();
+    if (!nav) return;
+    nav.classList.add('visible');
+    const items = loteState.items || [];
+    const total = items.length;
+    const idx = Math.max(0, Math.min(loteState.idx, Math.max(0, total - 1)));
+    loteState.idx = idx;
+
+    const detalle = nav.querySelector('.lote-detalle');
+    const lote = loteState.lote || {};
+    const listos = lote.items_listos ?? items.filter(i => i.estado === 'listo').length;
+    const errores = lote.items_error ?? items.filter(i => i.estado === 'error').length;
+    const estadoLote = lote.estado ? traducirEstado(lote.estado) : '';
+    detalle.textContent =
+      `${t('loteBook')} ${idx + 1} ${t('loteOf')} ${total}` +
+      `  ·  ${t('loteListos')}: ${listos}` +
+      (errores ? `  ·  ${t('loteErrores')}: ${errores}` : '') +
+      (estadoLote ? `  ·  ${t('loteEstado')}: ${estadoLote}` : '');
+
+    const chips = nav.querySelector('.lote-chips');
+    chips.innerHTML = items.map((it, i) => {
+      const activo = i === idx ? 'true' : 'false';
+      const icono = iconoEstadoLote(it.estado);
+      const titulo = nombreItemLote(it);
+      return `<button type="button" class="lote-chip"
+                data-idx="${i}" data-estado="${escapeAttr(it.estado)}"
+                aria-pressed="${activo}" title="${escapeAttr(titulo)}">
+                ${i + 1}<span class="estado-icono" aria-hidden="true">${icono}</span>
+              </button>`;
+    }).join('');
+
+    nav.querySelector('[data-direccion="-1"]').disabled = idx <= 0;
+    nav.querySelector('[data-direccion="1"]').disabled  = idx >= total - 1;
+
+    const cancelar = nav.querySelector('.lote-cancelar');
+    const enCurso = (lote.estado === 'pendiente' || lote.estado === 'en_proceso');
+    cancelar.style.display = enCurso ? '' : 'none';
+
+    // El select de descarga del lote completo aparece en cuanto hay al menos
+    // un libro 'listo'. Mientras todo esté pendiente, queda oculto.
+    const descargar = nav.querySelector('.lote-descargar');
+    if (descargar) {
+      descargar.style.display = (listos > 0) ? '' : 'none';
+    }
+  }
+
+  function traducirEstado(e) {
+    return {
+      pendiente: t('loteEstadoPendiente'),
+      en_proceso: t('loteEstadoEnProceso'),
+      finalizado: t('loteEstadoFinalizado'),
+      cancelado: t('loteEstadoCancelado'),
+    }[e] || e;
+  }
+  function iconoEstadoLote(estado) {
+    return ({ listo: '✓', en_proceso: '⟳', error: '!', cancelado: '×' })[estado] || '·';
+  }
+  function nombreItemLote(it) {
+    const partes = [];
+    if (it.etiqueta) partes.push(it.etiqueta);
+    if (Array.isArray(it.nombres_archivos) && it.nombres_archivos.length)
+      partes.push(it.nombres_archivos[0]);
+    partes.push('(' + traducirEstado(it.estado) + ')');
+    return partes.filter(Boolean).join(' — ');
+  }
+
+  async function fetchLote(loteId) {
+    const r = await fetch('/api/lote/' + encodeURIComponent(loteId), {
+      cache: 'no-store', credentials: 'same-origin',
+    });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Error');
+    return r.json();
+  }
+  async function fetchItem(loteId, itemId) {
+    const r = await fetch('/api/lote/' + encodeURIComponent(loteId)
+                          + '/item/' + encodeURIComponent(itemId), {
+      cache: 'no-store', credentials: 'same-origin',
+    });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Error');
+    return r.json();
+  }
+  async function postCancelar(loteId) {
+    const r = await fetch('/api/lote/' + encodeURIComponent(loteId) + '/cancelar', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-CSRF-Token': csrfToken || '' },
+    });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || t('loteCancelFailed'));
+    return r.json();
+  }
+
+  async function abrirLote(loteId) {
+    detenerPolling();
+    loteState.id = loteId;
+    loteState.items = [];
+    loteState.cache = {};
+    loteState.idx = 0;
+    loteState.lote = null;
+    asegurarComponente();
+    const resultados = document.getElementById('resultados');
+    if (resultados) resultados.classList.remove('hidden');
+    await refrescarLote({ mostrarInicial: true });
+    arrancarPolling();
+  }
+
+  async function mostrarItemDelLote(idx) {
+    if (!loteState.id) return;
+    const total = loteState.items.length;
+    if (total === 0) return;
+    idx = Math.max(0, Math.min(idx, total - 1));
+    loteState.idx = idx;
+    renderNavegador();
+    await pintarItem(loteState.items[idx]);
+  }
+
+  async function refrescarLote(opts) {
+    if (!loteState.id) return;
+    opts = opts || {};
+    const nav = document.getElementById('lote-nav');
+    if (nav) nav.classList.add('refrescando');
+    try {
+      const data = await fetchLote(loteState.id);
+      loteState.lote = data.lote;
+      loteState.items = Array.isArray(data.items) ? data.items : [];
+      if (opts.mostrarInicial) {
+        let preferido = loteState.items.findIndex(i => i.estado === 'listo');
+        if (preferido < 0) preferido = 0;
+        loteState.idx = preferido;
+      }
+      renderNavegador();
+      const actual = loteState.items[loteState.idx];
+      if (opts.mostrarInicial && actual) {
+        await pintarItem(actual);
+      } else if (actual && actual.estado === 'listo' && !loteState.cache[actual.id]) {
+        await pintarItem(actual);
+      }
+    } catch (e) {
+      console.warn('[lote-nav] refresh fallido:', e);
+    } finally {
+      if (nav) nav.classList.remove('refrescando');
+    }
+  }
+
+  async function pintarItem(item) {
+    if (!item) return;
+    if (item.estado === 'pendiente' || item.estado === 'en_proceso') {
+      pintarMensajeEnTabs(`<div class="lote-pendiente-panel">${escapeHtml(t('loteItemPending'))}</div>`);
+      return;
+    }
+    if (item.estado === 'cancelado') {
+      pintarMensajeEnTabs(`<div class="lote-pendiente-panel">${escapeHtml(t('loteItemCancelled'))}</div>`);
+      return;
+    }
+    if (item.estado === 'error') {
+      pintarMensajeEnTabs(
+        `<div class="lote-error-panel"><strong>${escapeHtml(t('loteItemError'))}</strong><br>` +
+        `<span>${escapeHtml(item.error || '—')}</span></div>`
+      );
+      return;
+    }
+    let payload = loteState.cache[item.id];
+    if (!payload) {
+      try {
+        payload = await fetchItem(loteState.id, item.id);
+        loteState.cache[item.id] = payload;
+      } catch (e) {
+        pintarMensajeEnTabs(
+          `<div class="lote-error-panel"><strong>${escapeHtml(t('loteItemError'))}</strong><br>` +
+          `<span>${escapeHtml(e.message)}</span></div>`
+        );
+        return;
+      }
+    }
+    ultimoResultado = payload;
+    aplicarPlantillasAResultado();
+    renderResultado();
+  }
+
+  function pintarMensajeEnTabs(html) {
+    const panel = document.getElementById('tab-campos');
+    if (panel) panel.innerHTML = html;
+    ['tab-isbd', 'tab-marc', 'tab-cobertura', 'tab-avisos'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '';
+    });
+    document.querySelectorAll('.tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === 'campos'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+    if (panel) panel.classList.remove('hidden');
+  }
+
+  function arrancarPolling() {
+    detenerPolling();
+    const tick = async () => {
+      if (!loteState.id) return;
+      await refrescarLote();
+      const estado = loteState.lote && loteState.lote.estado;
+      if (estado === 'pendiente' || estado === 'en_proceso') {
+        loteState.pollingHandle = setTimeout(tick, POLLING_MS);
+      }
+    };
+    loteState.pollingHandle = setTimeout(tick, POLLING_MS);
+  }
+  function detenerPolling() {
+    if (loteState.pollingHandle) {
+      clearTimeout(loteState.pollingHandle);
+      loteState.pollingHandle = null;
+    }
+  }
+
+  async function cancelarLoteActual() {
+    if (!loteState.id) return;
+    if (!confirm(t('loteCancelConfirm'))) return;
+    try {
+      await postCancelar(loteState.id);
+      await refrescarLote();
+    } catch (e) {
+      alert(t('loteCancelFailed') + ': ' + e.message);
+    }
+  }
+
+  // Descargar el lote completo (todos los libros listos) en el formato dado.
+  // Backend: GET /api/lote/{id}/exportar/{formato}
+  function descargarLote(formato) {
+    if (!loteState.id) return;
+    const url = '/api/lote/' + encodeURIComponent(loteState.id)
+              + '/exportar/' + encodeURIComponent(formato);
+    // Usamos un <a download> para conservar el nombre que el backend manda
+    // por Content-Disposition. window.open abriría una nueva pestaña.
+    const a = document.createElement('a');
+    a.href = url;
+    a.rel = 'noopener';
+    // No hace falta target; la respuesta es attachment.
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function cerrarLote() {
+    detenerPolling();
+    loteState.id = null;
+    loteState.items = [];
+    loteState.cache = {};
+    loteState.lote = null;
+    const nav = document.getElementById('lote-nav');
+    if (nav) nav.classList.remove('visible');
+  }
+
+  window.abrirLote = abrirLote;
+  window.mostrarItemDelLote = mostrarItemDelLote;
+  window.refrescarLote = refrescarLote;
+  window.cerrarLote = cerrarLote;
+})();
 
 init();

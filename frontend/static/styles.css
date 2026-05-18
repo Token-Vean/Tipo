@@ -845,3 +845,67 @@ body.modo-flotante::before {
 @media (max-width: 760px) {
   .model-meta-grid { grid-template-columns: 1fr; }
 }
+
+/* ============================================================================
+ * Selector "Modo de subida" (un libro / varios libros)
+ * ============================================================================ */
+.upload-mode {
+  margin: 14px 0 10px;
+  display: grid;
+  gap: 6px;
+}
+.upload-mode > label {
+  display: grid;
+  gap: 4px;
+}
+.upload-mode > label > span {
+  font-size: .92rem;
+  color: var(--muted);
+}
+.upload-mode select {
+  width: 100%;
+  max-width: 520px;
+}
+.upload-mode p.muted.small {
+  margin: 2px 0 0;
+}
+
+/* ============================================================================
+ * Footer
+ * ============================================================================ */
+footer {
+  margin-top: 32px;
+  padding: 20px 24px 28px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-soft, var(--bg));
+  color: var(--muted);
+}
+.footer-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: grid;
+  gap: 4px;
+  font-size: .9rem;
+  line-height: 1.5;
+  text-align: center;
+}
+.footer-inner strong {
+  color: var(--text, inherit);
+  font-weight: 600;
+}
+@media (min-width: 760px) {
+  .footer-inner {
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    justify-content: center;
+    gap: 6px 18px;
+    text-align: left;
+  }
+  .footer-inner > div::after {
+    content: "·";
+    margin-left: 18px;
+    color: var(--line);
+  }
+  .footer-inner > div:last-child::after { content: none; }
+}
+.modo-flotante footer { display: none; }

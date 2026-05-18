@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Tipo — Asistente local de precatalogación</title>
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=20260517-lote2" />
   <link rel="manifest" href="/manifest.json" />
   <link rel="icon" href="/img/favicon.ico" />
   <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
@@ -69,8 +69,19 @@
       <p class="muted" data-i18n="sourcesHelp">Suba el libro completo. No hace falta separar portada, verso o colofón:
         Tipo localiza internamente las zonas relevantes y descarta el cuerpo. También puede subir imágenes sueltas si lo
         prefiere.</p>
-      <input id="ficheros" type="file" multiple accept="image/*,.pdf,.txt,.md,.docx" />
+      <input id="ficheros" type="file" multiple accept="image/*,.pdf,.txt,.md,.docx,.zip" />
       <div id="lista-ficheros" class="file-list"></div>
+
+      <div class="upload-mode">
+        <label><span data-i18n="uploadModeLabel">Modo de subida</span>
+          <select id="modo-subida" aria-describedby="modo-subida-help">
+            <option value="uno" data-i18n="uploadModeOne">Un solo libro (varias páginas o imágenes)</option>
+            <option value="lote_fichero" data-i18n="uploadModeMany">Varios libros — uno por fichero</option>
+            <option value="lote_zip" data-i18n="uploadModeManyZip">Varios libros — uno por ZIP</option>
+          </select>
+        </label>
+        <p id="modo-subida-help" class="muted small" data-i18n="uploadModeHelp">Elija «Varios libros» para procesar varios títulos en serie y poder navegar entre los resultados.</p>
+      </div>
 
       <div class="grid two">
         <label><span data-i18n="modeLabel">Modo</span>
@@ -334,27 +345,27 @@
     </div>
   </div>
 
-  <script src="/app.js"></script>
+  <script src="/app.js?v=20260517-lote2"></script>
 
 
   <footer>
     <div class="footer-inner">
-      <div><strong>Tipo</strong> · Local tool for AI-assisted cataloguing of modern printed monographs.</div>
-      <div>Authorship and conceptual development: <strong>Víctor Villapalos</strong>.</div>
+      <div><strong>Tipo</strong> · <span data-i18n="footerLine1">Herramienta local de catalogación asistida por IA para monografía moderna impresa.</span></div>
+      <div data-i18n="footerLine2">Autoría y desarrollo conceptual: <strong>Víctor Villapalos</strong>.</div>
       <div>© 2026 Víctor Villapalos</div>
     </div>
   </footer>
+
+  <div id="pantalla-apagado" class="shutdown-screen hidden" role="status" aria-live="polite">
+    <div class="shutdown-card">
+      <img src="/img/tipo-logo-header.png" alt="Tipo" />
+      <h1 data-i18n="shutdownScreenTitle">Tipo se está apagando</h1>
+      <p data-i18n="shutdownScreenText">El backend local ha recibido la orden de apagado. Puede cerrar esta pestaña y,
+        después, cerrar la ventana del panel o utilizar Detener/Desinstalar si lo necesita.</p>
+      <p class="muted" data-i18n="shutdownScreenHelp">Si vuelve a abrir Tipo desde el panel, el servicio arrancará de
+        nuevo.</p>
+    </div>
+  </div>
 </body>
 
 </html>
-
-<div id="pantalla-apagado" class="shutdown-screen hidden" role="status" aria-live="polite">
-  <div class="shutdown-card">
-    <img src="/img/tipo-logo-header.png" alt="Tipo" />
-    <h1 data-i18n="shutdownScreenTitle">Tipo se está apagando</h1>
-    <p data-i18n="shutdownScreenText">El backend local ha recibido la orden de apagado. Puede cerrar esta pestaña y,
-      después, cerrar la ventana del panel o utilizar Detener/Desinstalar si lo necesita.</p>
-    <p class="muted" data-i18n="shutdownScreenHelp">Si vuelve a abrir Tipo desde el panel, el servicio arrancará de
-      nuevo.</p>
-  </div>
-</div>
