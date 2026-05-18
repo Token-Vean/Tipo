@@ -13,9 +13,8 @@ import io
 import json
 import zipfile
 from datetime import datetime
-from typing import Any
 from xml.dom import minidom
-from xml.etree.ElementTree import Element, SubElement, register_namespace, tostring
+from xml.etree.ElementTree import Element, register_namespace, tostring
 
 from . import exportadores
 from .bibliografico import generar_isbd_desde_campos

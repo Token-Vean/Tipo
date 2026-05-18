@@ -31,7 +31,6 @@ import json
 import logging
 import os
 import sqlite3
-import time
 import uuid
 import zipfile
 from dataclasses import dataclass
@@ -73,7 +72,7 @@ ESTADOS_LOTE = {"pendiente", "en_proceso", "finalizado", "cancelado"}
 ESTADOS_ITEM = {"pendiente", "en_proceso", "listo", "error", "cancelado"}
 
 # Cola en memoria. Solo apunta a item_id; los datos viven en SQLite.
-_cola: "asyncio.Queue[str]" = asyncio.Queue()
+_cola: asyncio.Queue[str] = asyncio.Queue()
 _worker_task: asyncio.Task | None = None
 _worker_lock = asyncio.Lock()
 
@@ -765,7 +764,7 @@ async def _procesar_item(item_id: str) -> None:
         campos_dict = [c.__dict__ for c in propuesta.campos]
         isbd = bibliografico.generar_isbd_desde_campos(campos_dict)
         from . import exportadores as _exp
-        marc21_lineas = _exp.generar_marc21_texto(campos_dict)
+        marc21_lineas = _exp.generar_marc21_texto(campos_dict, lote["idioma_salida"])
         marc21_texto = _exp.marc21_a_texto_plano(marc21_lineas)
         payload = {
             "peticion": item_id,

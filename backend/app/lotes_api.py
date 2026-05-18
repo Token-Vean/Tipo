@@ -11,14 +11,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import zipfile
-from io import BytesIO
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 
 from . import lotes
 from . import exportadores_lote
