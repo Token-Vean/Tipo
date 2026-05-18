@@ -2,7 +2,7 @@ from app import bibliografico
 from app.version import APP_NAME, APP_VERSION
 
 
-EXPECTED_MAJOR_MINOR = "0.2.0"
+EXPECTED_MAJOR_MINOR = "0.3.0"
 
 
 def test_app_identity():
