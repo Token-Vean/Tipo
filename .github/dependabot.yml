@@ -1,0 +1,69 @@
+# =============================================================================
+# Dependabot — vigilancia automática de dependencias de Tipo
+# -----------------------------------------------------------------------------
+# Abre PRs cuando hay actualizaciones disponibles, con prioridad implícita a
+# los avisos de seguridad. Combinado con la verja bloqueante de pip-audit en
+# .github/workflows/security.yml, cierra el ciclo: los parches llegan solos y
+# el CI no deja pasar una vulnerabilidad con fix disponible.
+#
+# Nota: las versiones están fijadas de forma exacta en requirements.txt por
+# reproducibilidad. Dependabot respeta ese fijado y propone la subida como PR;
+# la decisión de mezclar sigue siendo manual.
+# =============================================================================
+
+version: 2
+
+updates:
+  # --- Dependencias Python del backend ---
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencias"
+      - "python"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    # Agrupa las actualizaciones de parche/menor no relacionadas con seguridad
+    # en un único PR para reducir ruido. Las de seguridad llegan por separado.
+    groups:
+      python-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+
+  # --- Imagen base de Docker (backend/Dockerfile) ---
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencias"
+      - "docker"
+    commit-message:
+      prefix: "deps(docker)"
+
+  # --- Acciones de GitHub usadas en los workflows ---
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencias"
+      - "ci"
+    commit-message:
+      prefix: "deps(ci)"

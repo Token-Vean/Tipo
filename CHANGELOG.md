@@ -3,6 +3,53 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Tipo sigue [versionado semántico](https://semver.org/lang/es/) en su variante beta.
 
+## [0.3.0-beta.2] — 2026-07-15
+
+Release de **seguridad**. No cambia funcionalidad ni interfaz: corrige una
+vulnerabilidad de dependencia y actualiza el proceso para que este tipo de
+hallazgos deje de pasar inadvertido. Recomendada para todas las instalaciones.
+
+### Seguridad
+
+- **BadHost / CVE-2026-48710 (GHSA-86qp-5c8j-p5mr).** Starlette 1.0.0
+  reconstruía `request.url` a partir de la cabecera `Host` sin validarla, de
+  modo que la ruta vista por un middleware podía divergir de la que el router
+  despachaba realmente. Doble mitigación:
+  - Los middlewares de seguridad (`auth.py`, `csrf.py`, `local_access.py`,
+    `api.py`) pasan a decidir sobre la ruta ASGI cruda `request.scope["path"]`
+    en lugar de `request.url.path`. Este es el arreglo permanente: protege
+    aunque una dependencia vuelva a introducir el fallo en el futuro.
+  - `starlette` 1.0.0 → **1.0.1**; `fastapi` 0.136.0 → **0.136.3** para
+    quedar alineado con Starlette ≥ 1.0.1.
+- **pypdf** 6.10.2 → **6.13.1**: denegación de servicio por PDF manipulado
+  (CVE-2026-48735, CVE-2026-49460, CVE-2026-49461, CVE-2026-54651). El
+  sandbox de parsers ya contenía el impacto (timeout + `RLIMIT_AS`), pero se
+  actualiza igualmente.
+- **Pillow** 12.2.0 → **12.3.0**: CVE-2026-55379 (asignación de memoria en
+  fuentes BDF) y CVE-2026-55798 (`ImageShow`, no usado por Tipo).
+
+### Cambiado
+
+- CI: `pip-audit` pasa a ser **bloqueante** para vulnerabilidades con
+  corrección disponible (`--strict`), no solo informativo. Las excepciones
+  puntuales se declaran con `--ignore-vuln` y justificación en el propio
+  workflow. Esto cierra el hueco por el que la vulnerabilidad de Starlette
+  había quedado únicamente en el informe.
+- Vigilancia automática de dependencias mediante Dependabot
+  (`.github/dependabot.yml`): actualizaciones semanales de pip, Docker y
+  GitHub Actions.
+- `requirements.txt`: eliminado un bloque de dependencias duplicado y una
+  línea espuria heredados de una generación anterior del fichero.
+
+### Notas para la actualización
+
+- Reconstruir la imagen (`docker compose build`) para instalar las versiones
+  nuevas.
+- Sin cambios de configuración, de esquema de datos ni de puertos. No requiere
+  migración.
+
+---
+
 ## [0.3.0-beta.1] — 2026-05-18
 
 Esta es la **release de tratamiento por lotes**. Tipo deja de catalogar

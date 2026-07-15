@@ -67,7 +67,7 @@ jobs:
         # Excepciones puntuales y justificadas: añadir el ID a --ignore-vuln,
         # SIEMPRE con un comentario que explique por qué se acepta y hasta cuándo.
         run: |
-          pip-audit -r backend/requirements.txt --require-hashes=false --strict
+          pip-audit -r backend/requirements.txt --strict
           # Ejemplo de excepción temporal (mantener comentado si no se usa):
           #   pip-audit -r backend/requirements.txt \
           #     --ignore-vuln GHSA-xxxx-xxxx-xxxx  # motivo + fecha de revisión
