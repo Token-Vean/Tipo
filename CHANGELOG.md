@@ -19,14 +19,17 @@ hallazgos deje de pasar inadvertido. Recomendada para todas las instalaciones.
     `api.py`) pasan a decidir sobre la ruta ASGI cruda `request.scope["path"]`
     en lugar de `request.url.path`. Este es el arreglo permanente: protege
     aunque una dependencia vuelva a introducir el fallo en el futuro.
-  - `starlette` 1.0.0 → **1.0.1**; `fastapi` 0.136.0 → **0.136.3** para
-    quedar alineado con Starlette ≥ 1.0.1.
-- **pypdf** 6.10.2 → **6.13.1**: denegación de servicio por PDF manipulado
-  (CVE-2026-48735, CVE-2026-49460, CVE-2026-49461, CVE-2026-54651). El
-  sandbox de parsers ya contenía el impacto (timeout + `RLIMIT_AS`), pero se
-  actualiza igualmente.
+  - `starlette` 1.0.0 → **1.3.1** (cierra también PYSEC-2026-248/249/2280/2281);
+    `fastapi` 0.136.0 → **0.139.0**, última estable y probada contra
+    Starlette 1.3.x, lo que garantiza compatibilidad de runtime.
+- **python-multipart** 0.0.26 → **0.0.31**: PYSEC-2026-3036/3037/3039/3040
+  (parseo de formularios multipart).
+- **pypdf** 6.10.2 → **6.13.3**: denegación de servicio por PDF manipulado
+  (GHSA-jm82-fx9c-mx94 y anteriores). El sandbox de parsers ya contenía el
+  impacto (timeout + `RLIMIT_AS`), pero se actualiza igualmente.
 - **Pillow** 12.2.0 → **12.3.0**: CVE-2026-55379 (asignación de memoria en
   fuentes BDF) y CVE-2026-55798 (`ImageShow`, no usado por Tipo).
+- **idna** 3.13 → **3.15**: PYSEC-2026-215.
 
 ### Cambiado
 
