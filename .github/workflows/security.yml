@@ -152,7 +152,7 @@ jobs:
         run: docker build -t tipo-app:ci ./backend
 
       - name: Trivy image scan report (HIGH/CRITICAL, non-blocking)
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: tipo-app:ci
           format: table
@@ -163,7 +163,7 @@ jobs:
           scanners: vuln
 
       - name: Trivy image scan JSON (HIGH/CRITICAL, non-blocking)
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: tipo-app:ci
           format: json
@@ -174,7 +174,7 @@ jobs:
           scanners: vuln
 
       - name: Trivy blocking gate (fixed CRITICAL only)
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: tipo-app:ci
           format: table
@@ -185,7 +185,7 @@ jobs:
 
       - name: Generate image SBOM CycloneDX with Trivy
         if: always()
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: tipo-app:ci
           format: cyclonedx
@@ -195,7 +195,7 @@ jobs:
 
       - name: Generate image SBOM SPDX with Trivy
         if: always()
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: tipo-app:ci
           format: spdx-json
