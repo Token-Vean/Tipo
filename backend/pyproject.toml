@@ -21,9 +21,9 @@ classifiers = [
 
 dependencies = [
     # Web / API. Mantener estos mínimos alineados con requirements.txt.
-    "fastapi>=0.136.0,<0.137",
+    "fastapi>=0.136.3,<0.137",
     "uvicorn[standard]>=0.45.0,<0.46",
-    "starlette>=1.0.0,<1.1",
+    "starlette>=1.0.1,<1.1",
     "python-multipart>=0.0.26,<0.1",
     "httpx>=0.28.1,<0.29",
     "pydantic>=2.13.3,<3",
@@ -32,10 +32,10 @@ dependencies = [
     "pyyaml>=6.0.3,<7",
 
     # Procesamiento de documentos
-    "pypdf>=6.10.2,<7",
+    "pypdf>=6.13.1,<7",
     "pypdfium2>=5.7.1,<6",
     "python-docx>=1.2.0,<2",
-    "Pillow>=12.2.0,<13",
+    "Pillow>=12.3.0,<13",
 ]
 
 [project.optional-dependencies]

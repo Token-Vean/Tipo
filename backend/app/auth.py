@@ -522,7 +522,11 @@ class ProteccionAutenticacion(BaseHTTPMiddleware):
             request.state.usuario = {"username": "local", "role": "admin"}
             return await call_next(request)
 
-        path = request.url.path
+        # Seguridad: se lee la ruta ASGI cruda (scope["path"]), NO request.url.path.
+        # request.url reconstruye la URL a partir de la cabecera Host, que un cliente
+        # puede manipular (BadHost / CVE-2026-48710). Cualquier decisión de
+        # autorización debe basarse en la ruta real que el router va a despachar.
+        path = request.scope.get("path", "")
         if not path.startswith("/api/") or path in PUBLIC_API_PATHS:
             return await call_next(request)
 

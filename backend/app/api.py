@@ -183,7 +183,10 @@ class CabecerasSeguridad(BaseHTTPMiddleware):
         respuesta.headers["X-Frame-Options"] = "DENY"
         respuesta.headers["Referrer-Policy"] = "same-origin"
         respuesta.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
-        if request.url.path.startswith("/api/"):
+        # Ruta ASGI cruda (scope["path"]): request.url.path se reconstruye desde
+        # la cabecera Host (BadHost / CVE-2026-48710). Aunque aqui solo decide una
+        # cabecera de cache, se homogeneiza el criterio en todos los middlewares.
+        if request.scope.get("path", "").startswith("/api/"):
             respuesta.headers["Cache-Control"] = "no-store"
         return respuesta
 

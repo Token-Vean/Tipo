@@ -1,18 +1,32 @@
 # =============================================================================
 # Tipo — dependencias Python fijadas
 # -----------------------------------------------------------------------------
-# Generado con Python 3.12. Versiones fijadas para que builds reproducibles:
+# Generado con Python 3.12. Versiones fijadas para builds reproducibles:
 # la imagen que se construye hoy será idéntica a la que se construye dentro
 # de seis meses.
 #
 # Actualización recomendada: ejecutar `pip list --outdated` y `pip-audit`
 # antes de cada release, subir versiones, volver a probar.
+#
+# -----------------------------------------------------------------------------
+# Actualizaciones de seguridad (revisión de esta versión):
+#   - starlette 1.0.0 -> 1.0.1   BadHost / GHSA-86qp-5c8j-p5mr (CVE-2026-48710).
+#                                request.url se reconstruía desde la cabecera
+#                                Host sin validar, permitiendo divergencia entre
+#                                la ruta vista en middleware y la despachada.
+#                                Fix combinado con el uso de scope["path"] en
+#                                los middlewares de seguridad de Tipo.
+#   - fastapi   0.136.0 -> 0.136.3  Alineado con Starlette >= 1.0.1.
+#   - pypdf     6.10.2 -> 6.13.1  DoS por PDF manipulado (CVE-2026-48735,
+#                                 CVE-2026-49460/49461, CVE-2026-54651).
+#   - Pillow    12.2.0 -> 12.3.0  CVE-2026-55379 (asignación de memoria en BDF)
+#                                 y CVE-2026-55798 (ImageShow, no usado aquí).
 # =============================================================================
 
 # Web / API
-fastapi==0.136.0
+fastapi==0.136.3
 uvicorn[standard]==0.45.0
-starlette==1.0.0
+starlette==1.0.1
 python-multipart==0.0.26
 httpx==0.28.1
 httpcore==1.0.9
@@ -23,10 +37,10 @@ anyio==4.13.0
 pyyaml==6.0.3
 
 # Procesamiento de documentos
-pypdf==6.10.2
+pypdf==6.13.1
 pypdfium2==5.7.1
 python-docx==1.2.0
-Pillow==12.2.0
+Pillow==12.3.0
 
 # Dependencias transitivas fijadas (para reproducibilidad total)
 pydantic==2.13.3

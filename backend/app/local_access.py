@@ -54,7 +54,7 @@ class ProteccionAccesoLocal(BaseHTTPMiddleware):
             logger.warning(
                 "Solicitud rechazada por Host no local: host=%r path=%s",
                 host_header,
-                request.url.path,
+                request.scope.get("path", ""),
             )
             return JSONResponse(
                 status_code=403,

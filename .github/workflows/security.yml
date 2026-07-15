@@ -60,6 +60,18 @@ jobs:
             JSON
           fi
 
+      - name: pip-audit blocking gate (vulnerabilidades con corrección disponible)
+        # A diferencia del step "report only" anterior, este SÍ bloquea el build.
+        # Falla si hay vulnerabilidades conocidas CON versión corregida disponible.
+        # Las que no tienen fix aún no bloquean (se revisan en el informe).
+        # Excepciones puntuales y justificadas: añadir el ID a --ignore-vuln,
+        # SIEMPRE con un comentario que explique por qué se acepta y hasta cuándo.
+        run: |
+          pip-audit -r backend/requirements.txt --require-hashes=false --strict
+          # Ejemplo de excepción temporal (mantener comentado si no se usa):
+          #   pip-audit -r backend/requirements.txt \
+          #     --ignore-vuln GHSA-xxxx-xxxx-xxxx  # motivo + fecha de revisión
+
       - name: Generate Python SBOM CycloneDX
         if: always()
         continue-on-error: true
@@ -99,7 +111,7 @@ jobs:
         run: |
           echo "## Python security scan" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Ruff and tests are blocking. pip-audit is uploaded as a report for beta review." >> "$GITHUB_STEP_SUMMARY"
+          echo "Ruff, tests y pip-audit (vulns con fix disponible) son bloqueantes. El informe pip-audit se sube como artefacto." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           if [ -f pip-audit-results.json ]; then
             echo "pip-audit-results.json generated." >> "$GITHUB_STEP_SUMMARY"
