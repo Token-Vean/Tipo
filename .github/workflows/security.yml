@@ -204,7 +204,7 @@ jobs:
           scanners: vuln
 
       - name: Scan image with Grype (report only)
-        uses: anchore/scan-action@v6
+        uses: anchore/scan-action@v7
         continue-on-error: true
         with:
           image: tipo-app:ci
