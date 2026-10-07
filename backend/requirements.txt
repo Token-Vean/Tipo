@@ -24,6 +24,19 @@
 #                                         (GHSA-jm82-fx9c-mx94 y anteriores).
 #   - Pillow            12.2.0 -> 12.3.0  CVE-2026-55379 / CVE-2026-55798.
 #   - idna              3.13   -> 3.15    PYSEC-2026-215.
+#
+# Actualizaciones de seguridad (pip-audit y Trivy en CI, octubre 2026):
+#   - pypdf             6.13.3 -> 6.19.0  24 avisos de DoS por PDF manipulado
+#                                         (imágenes inline, etiquetas de página,
+#                                         FlateDecode, fuentes, formularios,
+#                                         ficheros incrustados...). 6.19.0 es la
+#                                         primera versión que los corrige todos.
+#                                         Relevante: Tipo abre PDF no confiables.
+#   - anyio             4.13.0 -> 4.14.2  CVE-2026-63374 (CRITICAL en Trivy:
+#                                         suplantación de certificado TLS con
+#                                         dominios internacionalizados) y
+#                                         CVE-2026-64847. Tipo solo habla HTTP
+#                                         con Ollama local, pero se corrige igual.
 # =============================================================================
 
 # Web / API
@@ -34,13 +47,13 @@ python-multipart==0.0.31
 httpx==0.28.1
 httpcore==1.0.9
 h11==0.16.0
-anyio==4.13.0
+anyio==4.14.2
 
 # Configuración y datos
 pyyaml==6.0.3
 
 # Procesamiento de documentos
-pypdf==6.13.3
+pypdf==6.19.0
 pypdfium2==5.7.1
 python-docx==1.2.0
 Pillow==12.3.0
