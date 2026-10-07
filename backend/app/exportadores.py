@@ -458,8 +458,26 @@ def _ind(v: str) -> str:
     return str(v)[:1]
 
 
+_RE_ESPACIOS_MARC_TEXTO = re.compile(r"\s+")
+
+
+def _escapar_valor_marc_texto(texto: str) -> str:
+    """Neutraliza en la representación de texto los caracteres que delimitan
+    estructura: '$' abre un subcampo y el salto de línea abre un campo.
+
+    Sin esto, un valor como "Autor\\n650 #0 $a Materia" (procedente del modelo,
+    de un documento manipulado o de una edición) aparecería como un campo 650
+    y un subcampo que no existen en el registro, y se colaría al copiar y pegar
+    en un SIGB que interprete '$'. Se sigue la convención de MarcEdit: '$' se
+    escribe {dollar}. Solo afecta al texto plano; el MARCXML ya separa la
+    estructura mediante elementos XML.
+    """
+    texto = _RE_ESPACIOS_MARC_TEXTO.sub(" ", texto).strip()
+    return texto.replace("$", "{dollar}")
+
+
 def _subcampo(code: str, valor: Any) -> str:
-    texto = _txt(valor)
+    texto = _escapar_valor_marc_texto(_txt(valor))
     return f" ${code} {texto}" if texto else ""
 
 
@@ -468,7 +486,12 @@ def _subcampos_lista(code: str, valor: Any) -> list[str]:
     if valor in (None, "", []):
         return []
     items = valor if isinstance(valor, list) else [valor]
-    return [f" ${code} {_limpiar_texto(v).strip()}" for v in items if _limpiar_texto(v).strip()]
+    salida = []
+    for v in items:
+        texto = _escapar_valor_marc_texto(_limpiar_texto(v))
+        if texto:
+            salida.append(f" ${code} {texto}")
+    return salida
 
 
 def generar_marc21_texto(campos: list[dict], idioma_salida: str | None = None) -> list[dict]:

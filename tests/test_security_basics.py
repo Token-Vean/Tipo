@@ -1,7 +1,6 @@
 from app import bibliografico
 from app.version import APP_NAME, APP_VERSION
 
-
 EXPECTED_MAJOR_MINOR = "0.3.0"
 
 

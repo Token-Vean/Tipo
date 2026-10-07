@@ -1,11 +1,23 @@
 """
 Protección de exposición local.
 
-Tipo está diseñado para uso local. Esta capa rechaza accesos
-cuyo encabezado Host no apunte a loopback, salvo que se active de forma
-explícita ALLOW_NETWORK_EXPOSURE=true. No sustituye autenticación; evita
-que un cambio accidental en Docker/uvicorn convierta la aplicación en un
-servicio de red sin controles adicionales.
+Tipo está diseñado para uso local. Esta capa rechaza peticiones cuyo
+encabezado Host no apunte a loopback, salvo que se active de forma explícita
+ALLOW_NETWORK_EXPOSURE=true.
+
+Qué protege y qué NO protege:
+
+- SÍ protege frente a DNS rebinding: una web maliciosa que hace resolver su
+  propio dominio a 127.0.0.1 envía su dominio en Host y queda rechazada.
+- SÍ evita que el navegador use la aplicación por una IP de red local
+  (http://192.168.x.x:8082) si el puerto llegara a publicarse por error.
+- NO es un control de acceso de red. La cabecera Host la decide el cliente:
+  cualquier programa que alcance el puerto puede enviar "Host: localhost".
+
+El control de red real es la publicación del puerto solo en loopback
+("127.0.0.1:${PUERTO}:8081" en docker-compose.yml). No cambie esa línea a
+"0.0.0.0" ni use `-p 8082:8081` confiando en esta capa: si el puerto queda
+expuesto, solo la autenticación separa la aplicación de la red.
 """
 
 from __future__ import annotations

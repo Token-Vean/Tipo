@@ -204,10 +204,54 @@ def _respuesta_403(mensaje: str) -> JSONResponse:
 # Middleware
 # =============================================================================
 
+def _peticion_cruzada_de_navegador(request: Request) -> str | None:
+    """Para rutas exentas de token (setup, login, logout): devuelve un motivo
+    si la petición llega desde otra web abierta en el navegador.
+
+    Esas rutas no pueden exigir token CSRF (no hay sesión todavía), pero un
+    navegador siempre declara de dónde viene una petición entre sitios: con
+    Sec-Fetch-Site y con Origin. Si alguna de las dos delata un origen ajeno,
+    se rechaza. Los clientes que no son navegador (curl, scripts locales) no
+    envían esas cabeceras y siguen funcionando.
+    """
+    sec_fetch_site = request.headers.get("sec-fetch-site", "").strip().lower()
+    if sec_fetch_site in {"cross-site", "same-site"}:
+        return f"Sec-Fetch-Site={sec_fetch_site}"
+    origen = request.headers.get("origin") or None
+    if origen is None:
+        referer = request.headers.get("referer")
+        if referer:
+            try:
+                p = urlparse(referer)
+                if p.scheme and p.netloc:
+                    origen = f"{p.scheme}://{p.netloc}"
+            except Exception:
+                return "Referer no válido"
+    if origen is not None and not _origen_coincide_con_host(origen.rstrip("/"), request):
+        return f"origen {origen}"
+    return None
+
+
 class ProteccionCSRF(BaseHTTPMiddleware):
     """Rechaza peticiones mutadoras sin Origin/Referer local y token válido."""
 
     async def dispatch(self, request: Request, call_next):
+        if request.method in METODOS_MUTADORES and request.scope.get("path", "") in RUTAS_EXENTAS:
+            # Exentas de token, pero no de la comprobación de origen: impide
+            # que una web maliciosa abierta en el navegador reclame la cuenta
+            # de administrador inicial o fuerce inicios de sesión.
+            motivo = _peticion_cruzada_de_navegador(request)
+            if motivo:
+                logger.warning(
+                    "CSRF: petición %s %s rechazada en ruta exenta (%s)",
+                    request.method, request.scope.get("path", ""), motivo,
+                )
+                return _respuesta_403(
+                    "Petición rechazada: esta operación solo puede hacerse desde la propia "
+                    "aplicación en localhost."
+                )
+            return await call_next(request)
+
         if _peticion_exenta(request):
             return await call_next(request)
 

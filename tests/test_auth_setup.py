@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
 from app import auth
 from app.main import app
+from fastapi.testclient import TestClient
 
 
 def _reset_auth(tmp_path: Path, monkeypatch):
