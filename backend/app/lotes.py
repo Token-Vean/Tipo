@@ -18,6 +18,10 @@ Diseño:
 - Cancelación lógica: marca pendientes como 'cancelado'; el item en curso termina.
 - Aislamiento por item: una excepción en un libro deja ese libro en 'error' y el
   lote continúa con el siguiente.
+- Almacenamiento acotado: subida por bloques (nunca el fichero entero en
+  memoria), cuota de disco por usuario, retención opcional por días, borrado de
+  originales al terminar en modo incógnito y borrado de todos los lotes de un
+  usuario cuando se elimina (o antes de reutilizar su nombre).
 
 Este módulo NO procesa nada por sí mismo: delega en router.procesar() y
 extractor.extraer(), que ya están endurecidos (sandbox, límites, evidencias).
@@ -27,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import json
 import logging
 import os
@@ -34,7 +39,7 @@ import sqlite3
 import uuid
 import zipfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +72,20 @@ REINTENTOS_MAX = max(0, int(os.getenv("TIPO_LOTE_REINTENTOS_MAX", "1")))
 ZIP_MAX_ENTRADAS = max(1, int(os.getenv("TIPO_LOTE_ZIP_MAX_ENTRADAS", "60")))
 ZIP_MAX_DESCOMPRIMIDO = int(os.getenv("TIPO_LOTE_ZIP_MAX_DESCOMPRIMIDO", str(200 * 1024 * 1024)))
 ZIP_MAX_RATIO = max(2, int(os.getenv("TIPO_LOTE_ZIP_MAX_RATIO", "100")))
+
+# Almacenamiento persistente (auditoría 2026-10).
+# - Cuota de disco por usuario sumando todos sus lotes (originales + resultados).
+# - Retención opcional: los lotes finalizados o cancelados con más de N días se
+#   borran solos (0 = desactivado, comportamiento anterior).
+# - Originales: en modo incógnito se borran siempre en cuanto el libro termina;
+#   en modo normal se conservan salvo TIPO_LOTE_CONSERVAR_ORIGINALES=false.
+#   Las exportaciones usan solo result.json, así que borrar originales de un
+#   libro ya terminado no afecta a nada que ofrezca la aplicación.
+MAX_BYTES_USUARIO = int(os.getenv("TIPO_LOTE_MAX_BYTES_USUARIO", str(10 * 1024 * 1024 * 1024)))  # 10 GB
+RETENCION_DIAS = max(0, int(os.getenv("TIPO_LOTE_RETENCION_DIAS", "0")))
+CONSERVAR_ORIGINALES = os.getenv("TIPO_LOTE_CONSERVAR_ORIGINALES", "true").strip().lower() in VALORES_TRUE
+_TROZO_SUBIDA = 1024 * 1024
+_NOMBRE_ZIP_TEMPORAL = "_subida.zip.tmp"
 
 ESTADOS_LOTE = {"pendiente", "en_proceso", "finalizado", "cancelado"}
 ESTADOS_ITEM = {"pendiente", "en_proceso", "listo", "error", "cancelado"}
@@ -215,17 +234,22 @@ def _saneo_nombre_seguro(nombre: str, max_len: int = 180) -> str:
     return texto or "sin_nombre"
 
 
-def _extraer_zip_libro(contenido_zip: bytes, destino: Path) -> list[Path]:
+def _extraer_zip_libro(fuente_zip: bytes | Path, destino: Path) -> list[Path]:
     """
     Extrae los ficheros de un ZIP de libro (modo un_libro_por_zip) a `destino`
     con validaciones anti-zipbomb. Devuelve la lista de rutas extraídas, en el
     orden en que aparecen en el ZIP.
 
+    `fuente_zip` puede ser el contenido en memoria (bytes) o la ruta de un
+    fichero ZIP ya guardado en disco (lo que usa crear_lote para no cargar la
+    subida entera en memoria).
+
     No valida MIME aquí: la validación real la hace router.procesar() por cada
     archivo cuando el worker lo procesa.
     """
+    origen = io.BytesIO(fuente_zip) if isinstance(fuente_zip, (bytes, bytearray)) else fuente_zip
     try:
-        with zipfile.ZipFile(__import__("io").BytesIO(contenido_zip)) as zf:
+        with zipfile.ZipFile(origen) as zf:
             infos = zf.infolist()
             if len(infos) > ZIP_MAX_ENTRADAS:
                 raise ErrorValidacion(
@@ -274,6 +298,34 @@ def _extraer_zip_libro(contenido_zip: bytes, destino: Path) -> list[Path]:
 # Creación de lote
 # =============================================================================
 
+class _LimiteSubidaSuperado(Exception):
+    """Una subida supera el límite del lote ("lote") o la cuota ("usuario")."""
+
+    def __init__(self, motivo: str) -> None:
+        super().__init__(motivo)
+        self.motivo = motivo
+
+
+async def _guardar_subida(fichero: UploadFile, destino: Path, limite: int, motivo: str) -> int:
+    """Copia un UploadFile a `destino` por bloques de 1 MB, sin cargarlo
+    entero en memoria. Lanza _LimiteSubidaSuperado(motivo) en cuanto se supera
+    `limite`. Devuelve los bytes escritos."""
+    if limite <= 0:
+        raise _LimiteSubidaSuperado(motivo)
+    escritos = 0
+    await fichero.seek(0)
+    with destino.open("wb") as dst:
+        while True:
+            trozo = await fichero.read(_TROZO_SUBIDA)
+            if not trozo:
+                break
+            escritos += len(trozo)
+            if escritos > limite:
+                raise _LimiteSubidaSuperado(motivo)
+            dst.write(trozo)
+    return escritos
+
+
 async def crear_lote(
     *,
     ficheros: list[UploadFile],
@@ -302,6 +354,19 @@ async def crear_lote(
     if len(ficheros) > MAX_LIBROS_LOTE:
         raise ValueError(f"Demasiados libros en el lote: máximo {MAX_LIBROS_LOTE}.")
 
+    # Retención y cuota antes de aceptar nada nuevo.
+    try:
+        await asyncio.to_thread(purgar_lotes_caducados)
+    except Exception:  # noqa: BLE001
+        logger.exception("No se pudo aplicar la retención de lotes")
+    uso_actual = await asyncio.to_thread(uso_disco_usuario, username)
+    disponible_usuario = MAX_BYTES_USUARIO - uso_actual
+    if disponible_usuario <= 0:
+        raise ValueError(
+            "Ha alcanzado el espacio máximo para lotes "
+            f"({MAX_BYTES_USUARIO // (1024 * 1024)} MB). Borre lotes antiguos para continuar."
+        )
+
     lote_id = uuid.uuid4().hex[:16]
     base = LOTES_DIR / lote_id
     base.mkdir(parents=True, exist_ok=True)
@@ -311,41 +376,63 @@ async def crear_lote(
         pass
 
     items_a_persistir: list[tuple[str, int, str | None, list[str], Path]] = []
-    bytes_acumulados = 0
+    bytes_subidos = 0     # lo recibido (límite MAX_BYTES_LOTE, como antes)
+    bytes_en_disco = 0    # lo que queda guardado (cuota por usuario)
 
-    for idx, fichero in enumerate(ficheros):
-        nombre_base = _saneo_nombre_seguro(fichero.filename or f"libro_{idx + 1}", 180)
-        etiqueta = None
-        if etiquetas and idx < len(etiquetas):
-            etiqueta = _saneo_nombre_seguro(etiquetas[idx], 80)
-        item_id = uuid.uuid4().hex[:12]
-        item_dir = base / item_id
-        item_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        for idx, fichero in enumerate(ficheros):
+            nombre_base = _saneo_nombre_seguro(fichero.filename or f"libro_{idx + 1}", 180)
+            etiqueta = None
+            if etiquetas and idx < len(etiquetas):
+                etiqueta = _saneo_nombre_seguro(etiquetas[idx], 80)
+            item_id = uuid.uuid4().hex[:12]
+            item_dir = base / item_id
+            item_dir.mkdir(parents=True, exist_ok=True)
 
-        contenido = await fichero.read()
-        bytes_acumulados += len(contenido)
-        if bytes_acumulados > MAX_BYTES_LOTE:
-            # Limpiar lo escrito hasta ahora y abortar
-            _borrar_dir(base)
+            # Copia por bloques: el fichero nunca se carga entero en memoria.
+            restante_lote = MAX_BYTES_LOTE - bytes_subidos
+            restante_usuario = disponible_usuario - bytes_en_disco
+            limite_fichero = min(restante_lote, restante_usuario)
+            motivo_limite = "lote" if restante_lote <= restante_usuario else "usuario"
+            nombres: list[str] = []
+            if agrupacion == "un_libro_por_fichero":
+                destino = item_dir / f"000__{nombre_base}"
+                escritos = await _guardar_subida(fichero, destino, limite_fichero, motivo_limite)
+                bytes_subidos += escritos
+                bytes_en_disco += escritos
+                nombres.append(nombre_base)
+            else:  # un_libro_por_zip
+                zip_temporal = item_dir / _NOMBRE_ZIP_TEMPORAL
+                try:
+                    escritos = await _guardar_subida(fichero, zip_temporal, limite_fichero, motivo_limite)
+                    bytes_subidos += escritos
+                    try:
+                        rutas = await asyncio.to_thread(_extraer_zip_libro, zip_temporal, item_dir)
+                    except ErrorValidacion as exc:
+                        raise ValueError(f"{nombre_base}: {exc}") from None
+                finally:
+                    zip_temporal.unlink(missing_ok=True)
+                bytes_en_disco += sum(r.stat().st_size for r in rutas)
+                if bytes_en_disco > disponible_usuario:
+                    raise _LimiteSubidaSuperado("usuario")
+                nombres = [r.name.split("__", 1)[1] if "__" in r.name else r.name for r in rutas]
+
+            items_a_persistir.append((item_id, idx, etiqueta, nombres, item_dir))
+    except _LimiteSubidaSuperado as exc:
+        _borrar_dir(base)
+        if exc.motivo == "lote":
             raise ValueError(
                 f"El lote supera el tamaño máximo permitido ({MAX_BYTES_LOTE} bytes)."
-            )
-
-        nombres: list[str] = []
-        if agrupacion == "un_libro_por_fichero":
-            destino = item_dir / f"000__{nombre_base}"
-            destino.write_bytes(contenido)
-            nombres.append(nombre_base)
-        else:  # un_libro_por_zip
-            try:
-                rutas = _extraer_zip_libro(contenido, item_dir)
-            except ErrorValidacion as exc:
-                _borrar_dir(base)
-                raise ValueError(f"{nombre_base}: {exc}") from None
-            nombres = [r.name.split("__", 1)[1] if "__" in r.name else r.name for r in rutas]
-
-        items_a_persistir.append((item_id, idx, etiqueta, nombres, item_dir))
-        contenido = b""
+            ) from None
+        raise ValueError(
+            "El lote no cabe en el espacio máximo para lotes de este usuario "
+            f"({MAX_BYTES_USUARIO // (1024 * 1024)} MB). Borre lotes antiguos para continuar."
+        ) from None
+    except BaseException:
+        # Cualquier otro fallo (ZIP inválido, disco lleno, cancelación): no
+        # dejar ficheros a medias de un lote que no llega a existir.
+        _borrar_dir(base)
+        raise
 
     # Persistir lote + items atómicamente.
     with _db() as conn:
@@ -530,6 +617,132 @@ def _borrar_dir(path: Path) -> None:
 
 
 # =============================================================================
+# Almacenamiento: cuota, retención, originales y borrado por usuario
+# =============================================================================
+
+def _bytes_en_disco(path: Path) -> int:
+    total = 0
+    if not path.exists():
+        return 0
+    for raiz, _dirs, ficheros in os.walk(path):
+        for nombre in ficheros:
+            try:
+                total += (Path(raiz) / nombre).stat().st_size
+            except OSError:
+                pass
+    return total
+
+
+def uso_disco_usuario(username: str) -> int:
+    """Bytes que ocupan en disco todos los lotes de `username`."""
+    if not DB_PATH.exists():
+        return 0
+    with _db() as conn:
+        ids = [r["id"] for r in conn.execute("SELECT id FROM lotes WHERE username = ?", (username,))]
+    return sum(_bytes_en_disco(LOTES_DIR / lote_id) for lote_id in ids)
+
+
+def _borrar_lotes(ids: list[str]) -> None:
+    """Borra lotes (filas e items) y sus directorios. Sin comprobar dueño."""
+    if not ids:
+        return
+    with _db() as conn:
+        conn.execute("BEGIN")
+        try:
+            for lote_id in ids:
+                conn.execute("DELETE FROM lote_items WHERE lote_id = ?", (lote_id,))
+                conn.execute("DELETE FROM lotes WHERE id = ?", (lote_id,))
+            conn.execute("COMMIT")
+        except sqlite3.Error:
+            conn.execute("ROLLBACK")
+            raise
+    for lote_id in ids:
+        _borrar_dir(LOTES_DIR / lote_id)
+
+
+def borrar_lotes_de_usuario(username: str) -> int:
+    """Borra todos los lotes de `username`, en cualquier estado, con sus
+    documentos y resultados. Lo usa auth al eliminar un usuario y antes de
+    crear uno con un nombre que pudo existir: así nadie hereda lotes ajenos.
+
+    Si un item de esos lotes se está procesando en ese momento, el worker lo
+    termina sin efecto: su fila ya no existe y su directorio tampoco.
+    Devuelve el número de lotes borrados."""
+    if not DB_PATH.exists():
+        return 0  # nunca se ha creado ningún lote
+    with _db() as conn:
+        ids = [r["id"] for r in conn.execute("SELECT id FROM lotes WHERE username = ?", (username,))]
+    _borrar_lotes(ids)
+    if ids:
+        logger.info("Borrados %d lotes del usuario %s", len(ids), username)
+    return len(ids)
+
+
+def purgar_lotes_caducados() -> int:
+    """Aplica TIPO_LOTE_RETENCION_DIAS: borra lotes finalizados o cancelados
+    cuya finalización (o creación) sea anterior al plazo. Los lotes pendientes
+    o en proceso nunca se tocan. Devuelve el número de lotes borrados."""
+    if RETENCION_DIAS <= 0 or not DB_PATH.exists():
+        return 0
+    corte = (datetime.now() - timedelta(days=RETENCION_DIAS)).isoformat(timespec="seconds")
+    with _db() as conn:
+        ids = [
+            r["id"] for r in conn.execute(
+                "SELECT id FROM lotes WHERE estado IN ('finalizado', 'cancelado') "
+                "AND COALESCE(finalizado_en, creado_en) < ?",
+                (corte,),
+            )
+        ]
+    _borrar_lotes(ids)
+    if ids:
+        logger.info("Retención: borrados %d lotes con más de %d días", len(ids), RETENCION_DIAS)
+    return len(ids)
+
+
+def _borrar_originales_de_dir(item_dir: Path) -> None:
+    """Borra los ficheros de entrada de un item y conserva result.json."""
+    if not item_dir.is_dir():
+        return
+    for ruta in item_dir.iterdir():
+        if ruta.is_file() and ruta.name != "result.json":
+            try:
+                ruta.unlink()
+            except OSError:
+                logger.warning("No se pudo borrar el original %s", ruta)
+
+
+def limpiar_originales_si_procede(item_id: str) -> None:
+    """Tras procesar un item: si ha terminado (listo, error o cancelado) y el
+    lote es incógnito o CONSERVAR_ORIGINALES está desactivado, borra sus
+    documentos originales. El resultado (result.json) se conserva."""
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT i.estado, i.ruta_entrada, l.incognito FROM lote_items i "
+            "JOIN lotes l ON l.id = i.lote_id WHERE i.id = ?",
+            (item_id,),
+        ).fetchone()
+    if not row or row["estado"] not in {"listo", "error", "cancelado"}:
+        return
+    if CONSERVAR_ORIGINALES and not row["incognito"]:
+        return
+    _borrar_originales_de_dir(Path(row["ruta_entrada"]))
+
+
+def limpiar_originales_finalizados() -> int:
+    """Al arrancar: aplica la misma regla a items terminados antes de esta
+    versión o de un reinicio. Devuelve cuántos items se han revisado."""
+    condicion = "" if not CONSERVAR_ORIGINALES else "AND l.incognito = 1"
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT i.ruta_entrada FROM lote_items i JOIN lotes l ON l.id = i.lote_id "
+            f"WHERE i.estado IN ('listo', 'error', 'cancelado') {condicion}"
+        ).fetchall()
+    for r in rows:
+        _borrar_originales_de_dir(Path(r["ruta_entrada"]))
+    return len(rows)
+
+
+# =============================================================================
 # Worker
 # =============================================================================
 
@@ -591,6 +804,17 @@ def recuperar_arranque() -> None:
         _cola.put_nowait(r["id"])
     logger.info("Recuperación de arranque: %d items pendientes reencolados", len(pendientes))
 
+    # Mantenimiento de almacenamiento (auditoría 2026-10). Errores aquí no
+    # deben impedir que el worker arranque.
+    try:
+        purgar_lotes_caducados()
+    except Exception:  # noqa: BLE001
+        logger.exception("No se pudo aplicar la retención de lotes al arrancar")
+    try:
+        limpiar_originales_finalizados()
+    except Exception:  # noqa: BLE001
+        logger.exception("No se pudieron limpiar originales de items terminados al arrancar")
+
 
 def _reconciliar_agregados(conn: sqlite3.Connection) -> None:
     """Recalcula items_listos/error/cancelados y el estado del lote en base a
@@ -644,6 +868,10 @@ async def _bucle_worker() -> None:
         except Exception:  # noqa: BLE001
             logger.exception("Fallo inesperado en el worker procesando item %s", item_id)
         finally:
+            try:
+                await asyncio.to_thread(limpiar_originales_si_procede, item_id)
+            except Exception:  # noqa: BLE001
+                logger.exception("No se pudieron limpiar los originales del item %s", item_id)
             _cola.task_done()
 
 
@@ -704,6 +932,8 @@ async def _procesar_item(item_id: str) -> None:
     # 4. Procesar cada fichero del item (sandbox + zonas) en thread → no bloquea event loop
     INCLUIR_HASH = os.getenv("INCLUIR_HASH_DOCUMENTO_AUDITORIA", "true").strip().lower() in VALORES_TRUE
     procesados: list[tuple[router_entrada.DocumentoProcesado, str, str | None]] = []
+    from .api import comprobar_presupuesto_imagenes  # importación tardía (como abajo)
+    bytes_imagenes_acumulados = 0
     try:
         for idx, ruta in enumerate(ficheros):
             contenido = await asyncio.to_thread(ruta.read_bytes)
@@ -712,6 +942,9 @@ async def _procesar_item(item_id: str) -> None:
             etiqueta = item["etiqueta"] or f"imagen_{idx + 1}"
             try:
                 doc = await asyncio.to_thread(router_entrada.procesar, contenido, nombre_real)
+                # Un ZIP de libro puede traer hasta 60 ficheros: mismo
+                # presupuesto global de imágenes que /api/describir.
+                bytes_imagenes_acumulados = comprobar_presupuesto_imagenes(bytes_imagenes_acumulados, doc)
             except ErrorValidacion as exc:
                 await _marcar_error(item_id, f"{nombre_real}: {exc}")
                 return

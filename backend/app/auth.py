@@ -17,7 +17,9 @@ sesiones del mismo equipo.
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import functools
 import hashlib
 import hmac
 import json
@@ -52,6 +54,12 @@ USERNAME_RE = re.compile(r"^[a-zA-Z0-9._@-]{3,64}$")
 PASSWORD_MIN_LENGTH = int(os.getenv("TIPO_PASSWORD_MIN_LENGTH", "10"))
 LOGIN_MAX_ATTEMPTS = max(3, int(os.getenv("TIPO_LOGIN_MAX_ATTEMPTS", "6")))
 LOGIN_LOCK_SECONDS = max(60, int(os.getenv("TIPO_LOGIN_LOCK_SECONDS", "300")))
+# Límite adicional por cliente (IP), independiente del nombre de usuario:
+# impide sortear el bloqueo rotando nombres (password spraying) y acota el
+# coste de PBKDF2 y las escrituras de auditoría que puede provocar un cliente.
+LOGIN_MAX_ATTEMPTS_IP = max(LOGIN_MAX_ATTEMPTS, int(os.getenv("TIPO_LOGIN_MAX_ATTEMPTS_IP", "20")))
+# Tope de entradas del registro en memoria de fallos (se purgan las antiguas).
+LOGIN_FAILURES_MAX_ENTRADAS = 5000
 
 PUBLIC_API_PATHS = {
     "/api/estado",
@@ -66,6 +74,7 @@ _sessions: dict[str, dict[str, Any]] = {}
 _sessions_lock = threading.Lock()
 _users_lock = threading.RLock()
 _login_failures: dict[str, dict[str, Any]] = {}
+_login_failures_lock = threading.Lock()
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -314,6 +323,39 @@ def _hash_password(password: str) -> str:
     )
 
 
+@functools.lru_cache(maxsize=1)
+def _hash_ficticio() -> str:
+    """Hash PBKDF2 calculado una sola vez por proceso.
+
+    Se verifica contra él cuando el usuario no existe o está desactivado, para
+    que esa respuesta cueste exactamente un PBKDF2, igual que un usuario real
+    con contraseña incorrecta. Antes se calculaba un hash nuevo en cada intento
+    (dos PBKDF2), lo que hacía las respuestas de usuarios inexistentes el doble
+    de lentas y permitía enumerar usuarios midiendo el tiempo.
+    """
+    return _hash_password(secrets.token_urlsafe(24))
+
+
+def _purgar_lotes_previos(username: str) -> None:
+    """Elimina lotes que aún figuren a nombre de `username` antes de crear un
+    usuario con ese nombre. Son restos de un usuario borrado anteriormente: sin
+    esto, el usuario nuevo heredaría sus documentos y resultados. Falla en
+    cerrado: si no se pueden purgar, no se crea el usuario."""
+    from . import lotes  # importación tardía: lotes no depende de auth
+
+    try:
+        borrados = lotes.borrar_lotes_de_usuario(username)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("No se pudieron purgar lotes previos de %s", username)
+        raise HTTPException(
+            500,
+            "No se pudieron eliminar datos de lotes de un usuario anterior con ese nombre. "
+            "Revise el almacén local antes de crear el usuario.",
+        ) from exc
+    if borrados:
+        logger.warning("Purgados %d lotes huérfanos de un usuario anterior llamado %s", borrados, username)
+
+
 def _verify_password(password: str, encoded: str) -> bool:
     try:
         scheme, iter_s, salt_b64, digest_b64 = encoded.split("$", 3)
@@ -367,37 +409,84 @@ def _record_event(
         logger.debug("No se pudo registrar evento de seguridad", exc_info=True)
 
 
-def _check_login_lock(request: Request, username: str) -> None:
-    key = _client_key(request, username)
-    item = _login_failures.get(key)
-    if not item:
+def _ip_key(request: Request) -> str:
+    # Prefijo distinto de _client_key ("host:usuario") para que no colisionen.
+    host = request.client.host if request.client else "local"
+    return f"ip|{host}"
+
+
+def _purgar_login_failures(now: float) -> None:
+    """Acota la memoria del registro de fallos. Llamar con el lock tomado."""
+    if len(_login_failures) <= LOGIN_FAILURES_MAX_ENTRADAS:
         return
-    locked_until = float(item.get("locked_until", 0) or 0)
-    if locked_until > time.time():
-        wait = int(max(1, locked_until - time.time()))
+    caducadas = [
+        k for k, v in _login_failures.items()
+        if float(v.get("locked_until", 0) or 0) <= now
+        and now - float(v.get("last", 0) or 0) > LOGIN_LOCK_SECONDS
+    ]
+    for k in caducadas:
+        _login_failures.pop(k, None)
+    # Si aun así se supera el tope, se descartan las más antiguas no bloqueadas.
+    if len(_login_failures) > LOGIN_FAILURES_MAX_ENTRADAS:
+        no_bloqueadas = sorted(
+            (k for k, v in _login_failures.items() if float(v.get("locked_until", 0) or 0) <= now),
+            key=lambda k: float(_login_failures[k].get("last", 0) or 0),
+        )
+        for k in no_bloqueadas[: len(_login_failures) - LOGIN_FAILURES_MAX_ENTRADAS]:
+            _login_failures.pop(k, None)
+
+
+def _check_login_lock(request: Request, username: str) -> None:
+    now = time.time()
+    with _login_failures_lock:
+        items = [_login_failures.get(_ip_key(request)), _login_failures.get(_client_key(request, username))]
+    locked_until = max((float(i.get("locked_until", 0) or 0) for i in items if i), default=0.0)
+    if locked_until > now:
+        wait = int(max(1, locked_until - now))
         raise HTTPException(429, f"Demasiados intentos fallidos. Espere {wait} segundos antes de volver a intentarlo.")
 
 
 def _register_login_failure(request: Request, username: str) -> None:
-    key = _client_key(request, username)
-    item = _login_failures.setdefault(key, {"count": 0, "locked_until": 0})
-    item["count"] = int(item.get("count", 0)) + 1
-    if item["count"] >= LOGIN_MAX_ATTEMPTS:
-        item["locked_until"] = time.time() + LOGIN_LOCK_SECONDS
+    now = time.time()
+    with _login_failures_lock:
+        # Contador por usuario+cliente (comportamiento previo).
+        item = _login_failures.setdefault(_client_key(request, username), {"count": 0, "locked_until": 0})
+        item["count"] = int(item.get("count", 0)) + 1
+        item["last"] = now
+        if item["count"] >= LOGIN_MAX_ATTEMPTS:
+            item["locked_until"] = now + LOGIN_LOCK_SECONDS
+
+        # Contador por cliente, con ventana de LOGIN_LOCK_SECONDS.
+        ip_item = _login_failures.setdefault(_ip_key(request), {"count": 0, "locked_until": 0, "window_start": now})
+        if now - float(ip_item.get("window_start", now) or now) > LOGIN_LOCK_SECONDS:
+            ip_item["count"] = 0
+            ip_item["window_start"] = now
+        ip_item["count"] = int(ip_item.get("count", 0)) + 1
+        ip_item["last"] = now
+        if ip_item["count"] >= LOGIN_MAX_ATTEMPTS_IP:
+            ip_item["locked_until"] = now + LOGIN_LOCK_SECONDS
+            ip_item["count"] = 0
+            ip_item["window_start"] = now
+
+        _purgar_login_failures(now)
     host = request.client.host if request.client else "local"
     try:
-        with _db() as conn:
-            conn.execute(
-                "UPDATE users SET failed_login_count = failed_login_count + 1, last_failed_login_at = ? WHERE username = ?",
-                (_now_iso(), username),
-            )
-            _record_event(conn, "login_failed", target=username, client=host)
+        with _users_lock:
+            with _db() as conn:
+                conn.execute(
+                    "UPDATE users SET failed_login_count = failed_login_count + 1, last_failed_login_at = ? WHERE username = ?",
+                    (_now_iso(), username),
+                )
+                _record_event(conn, "login_failed", target=username, client=host)
     except Exception:
         logger.debug("No se pudo registrar intento fallido", exc_info=True)
 
 
 def _clear_login_failures(request: Request, username: str) -> None:
-    _login_failures.pop(_client_key(request, username), None)
+    # Solo se limpia el contador usuario+cliente. El contador por cliente caduca
+    # por ventana: un login correcto no debe borrar el rastro de un barrido.
+    with _login_failures_lock:
+        _login_failures.pop(_client_key(request, username), None)
 
 
 def hay_usuarios() -> bool:
@@ -577,6 +666,7 @@ async def setup(payload: SetupPayload, response: Response, request: Request):
             with _db() as conn:
                 if conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
                     raise HTTPException(409, "La configuración inicial ya se ha realizado.")
+                _purgar_lotes_previos(username)
                 now = _now_iso()
                 conn.execute(
                     "INSERT INTO users(username, password_hash, role, disabled, created_at, password_changed_at) VALUES (?, ?, 'admin', 0, ?, ?)",
@@ -595,30 +685,43 @@ async def setup(payload: SetupPayload, response: Response, request: Request):
     return {"ok": True, "user": {"username": username, "role": "admin"}}
 
 
+def _login_sync(request: Request, username: str, password: str) -> dict[str, Any]:
+    """Comprobación de credenciales. Síncrona (PBKDF2 + SQLite): se ejecuta en
+    un hilo desde login() para no bloquear el event loop. Devuelve el usuario."""
+    # La verificación PBKDF2 se hace FUERA de _users_lock: así varios intentos
+    # no se serializan detrás de un lock global ni bloquean otras operaciones
+    # de usuarios durante ~0,25 s cada uno.
+    with _users_lock:
+        try:
+            with _db() as conn:
+                user = _get_user(conn, username)
+        except RuntimeError as exc:
+            raise HTTPException(500, str(exc)) from exc
+    if not isinstance(user, dict) or user.get("disabled"):
+        _verify_password(password, _hash_ficticio())
+        _register_login_failure(request, username)
+        raise HTTPException(401, "Usuario o contraseña incorrectos.")
+    if not _verify_password(password, str(user.get("password_hash", ""))):
+        _register_login_failure(request, username)
+        raise HTTPException(401, "Usuario o contraseña incorrectos.")
+    with _users_lock:
+        try:
+            with _db() as conn:
+                now = _now_iso()
+                conn.execute("UPDATE users SET last_login_at = ?, failed_login_count = 0 WHERE username = ?", (now, username))
+                _record_event(conn, "login_ok", actor=username, target=username, client=request.client.host if request.client else "local")
+        except RuntimeError as exc:
+            raise HTTPException(500, str(exc)) from exc
+    return user
+
+
 @router.post("/login")
 async def login(payload: LoginPayload, response: Response, request: Request):
     if AUTH_DISABLED:
         return {"ok": True, "user": {"username": "local", "role": "admin"}}
     username = payload.username.strip()
     _check_login_lock(request, username)
-    with _users_lock:
-        try:
-            with _db() as conn:
-                user = _get_user(conn, username)
-                if not isinstance(user, dict) or user.get("disabled"):
-                    _verify_password(payload.password, _hash_password("contraseña-ficticia-segura"))
-                    _register_login_failure(request, username)
-                    raise HTTPException(401, "Usuario o contraseña incorrectos.")
-                if not _verify_password(payload.password, str(user.get("password_hash", ""))):
-                    _register_login_failure(request, username)
-                    raise HTTPException(401, "Usuario o contraseña incorrectos.")
-                now = _now_iso()
-                conn.execute("UPDATE users SET last_login_at = ?, failed_login_count = 0 WHERE username = ?", (now, username))
-                _record_event(conn, "login_ok", actor=username, target=username, client=request.client.host if request.client else "local")
-        except HTTPException:
-            raise
-        except RuntimeError as exc:
-            raise HTTPException(500, str(exc)) from exc
+    user = await asyncio.to_thread(_login_sync, request, username, payload.password)
     _clear_login_failures(request, username)
     token = _crear_sesion(username)
     _set_session_cookie(response, token)
@@ -667,6 +770,7 @@ async def crear_usuario(payload: UsuarioNuevoPayload, request: Request):
         with _db() as conn:
             if conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
                 raise HTTPException(409, "Ya existe un usuario con ese nombre.")
+            _purgar_lotes_previos(username)
             now = _now_iso()
             conn.execute(
                 "INSERT INTO users(username, password_hash, role, disabled, created_at, password_changed_at) VALUES (?, ?, ?, 0, ?, ?)",
@@ -751,4 +855,14 @@ async def eliminar_usuario(username: str, request: Request):
             conn.execute("DELETE FROM users WHERE username = ?", (username,))
             _record_event(conn, "user_deleted", actor=admin.get("username"), target=username)
     _cerrar_sesiones_usuario(username)
-    return {"ok": True}
+    # Sus lotes (documentos originales y resultados) solo eran accesibles para
+    # él: se eliminan para no dejarlos huérfanos ni heredables. Si falla, el
+    # usuario ya está borrado y la purga se reintenta al recrear ese nombre.
+    from . import lotes  # importación tardía: lotes no depende de auth
+
+    lotes_borrados = 0
+    try:
+        lotes_borrados = lotes.borrar_lotes_de_usuario(username)
+    except Exception:  # noqa: BLE001
+        logger.exception("Usuario %s borrado, pero no se pudieron eliminar sus lotes", username)
+    return {"ok": True, "lotes_borrados": lotes_borrados}

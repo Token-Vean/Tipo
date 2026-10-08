@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
-
-from fastapi.testclient import TestClient
 
 from app import auth
 from app.main import app
+from fastapi.testclient import TestClient
 
 
 def _csrf(client: TestClient) -> str:
@@ -61,10 +61,18 @@ def test_admin_can_create_reset_disable_and_delete_user(tmp_path: Path, monkeypa
 def test_legacy_users_json_is_migrated_to_sqlite(tmp_path: Path, monkeypatch):
     _reset_auth(tmp_path, monkeypatch)
     legacy_hash = auth._hash_password('TipoBeta2026!')
-    (tmp_path / 'users.json').write_text(
-        '{"version":1,"users":{"admin":{"password_hash":"%s","role":"admin","created_at":"2026-01-01T00:00:00Z","disabled":false}}}' % legacy_hash,
-        encoding='utf-8',
-    )
+    legacy = {
+        "version": 1,
+        "users": {
+            "admin": {
+                "password_hash": legacy_hash,
+                "role": "admin",
+                "created_at": "2026-01-01T00:00:00Z",
+                "disabled": False,
+            }
+        },
+    }
+    (tmp_path / 'users.json').write_text(json.dumps(legacy), encoding='utf-8')
     assert auth.hay_usuarios() is True
     assert (tmp_path / 'tipo_auth.sqlite3').exists()
     assert (tmp_path / 'users.json.migrated').exists()

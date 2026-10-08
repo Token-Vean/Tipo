@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
 from app import auth, llm
 from app.main import app
+from fastapi.testclient import TestClient
 
 
 def test_modelos_endpoint_lists_downloaded_models(tmp_path: Path, monkeypatch):

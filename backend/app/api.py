@@ -70,6 +70,20 @@ async def _validar_modelo_instalado(nombre: str) -> None:
 
 MAX_DESCRIBIR_BODY_BYTES = int(os.getenv("MAX_DESCRIBIR_BODY_BYTES", str(router_entrada.TAMANO_MAXIMO_BYTES + 8 * 1024 * 1024)))
 MAX_EXPORT_BODY_BYTES = int(os.getenv("MAX_EXPORT_BODY_BYTES", str(15 * 1024 * 1024)))
+# Límites de cuerpo para el resto de rutas mutadoras (auditoría 2026-10).
+# Las rutas de autenticación son públicas: su cuerpo es un JSON diminuto y no
+# debe poder llegar a memoria completo si es enorme.
+MAX_AUTH_BODY_BYTES = int(os.getenv("MAX_AUTH_BODY_BYTES", str(16 * 1024)))
+MAX_LOTE_BODY_BYTES = int(os.getenv(
+    "MAX_LOTE_BODY_BYTES",
+    str(int(os.getenv("TIPO_MAX_BYTES_LOTE", str(2 * 1024 * 1024 * 1024))) + 16 * 1024 * 1024),
+))
+MAX_BODY_BYTES_DEFECTO = int(os.getenv("MAX_BODY_BYTES_DEFECTO", str(1024 * 1024)))
+# Presupuesto global de imágenes rasterizadas/normalizadas que se retienen en
+# memoria para una misma descripción (suma de todos los ficheros). El router ya
+# limita cada fichero; este tope evita que muchos ficheros sumen gigabytes antes
+# de codificarse en base64 para Ollama.
+MAX_BYTES_IMAGENES_PETICION = int(os.getenv("MAX_BYTES_IMAGENES_PETICION", str(200 * 1024 * 1024)))
 MAX_CAMPOS_EXPORTACION = int(os.getenv("MAX_CAMPOS_EXPORTACION", "250"))
 MAX_LONGITUD_VALOR_EXPORTACION = int(os.getenv("MAX_LONGITUD_VALOR_EXPORTACION", "50000"))
 MAX_LONGITUD_EVIDENCIA_EXPORTACION = int(os.getenv("MAX_LONGITUD_EVIDENCIA_EXPORTACION", "8000"))
@@ -126,7 +140,19 @@ class ConjuntoProcesado:
 
 
 class LimiteCuerpoPeticion:
-    """Rechaza cuerpos HTTP excesivos antes del parseo multipart/JSON."""
+    """Rechaza cuerpos HTTP excesivos antes del parseo multipart/JSON.
+
+    Dos barreras:
+      1. Content-Length declarado: si supera el límite, 413 inmediato sin leer
+         nada. En las rutas de subida (describir, exportar, lote) es obligatorio.
+      2. Bytes realmente recibidos: el canal `receive` se envuelve y cuenta lo
+         que llega. Si se supera el límite (cuerpo chunked o sin
+         Content-Length), se responde 413 y se deja de leer antes de que el
+         cuerpo completo llegue a memoria.
+
+    Todas las rutas mutadoras tienen límite; las que no aparecen de forma
+    explícita usan MAX_BODY_BYTES_DEFECTO.
+    """
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -137,34 +163,73 @@ class LimiteCuerpoPeticion:
             return
         metodo = scope.get("method", "").upper()
         ruta = scope.get("path", "")
-        limite = self._limite_para(metodo, ruta)
-        if limite is None:
+        regla = self._limite_para(metodo, ruta)
+        if regla is None:
             await self.app(scope, receive, send)
             return
+        limite, exige_longitud = regla
         headers = {k.lower(): v for k, v in scope.get("headers", [])}
         raw_len = headers.get(b"content-length")
         if raw_len is None:
-            await self._enviar_json(send, 411, "Content-Length requerido para esta operación.")
-            return
-        try:
-            longitud = int(raw_len.decode("ascii"))
-        except (ValueError, UnicodeDecodeError):
-            await self._enviar_json(send, 400, "Content-Length inválido.")
-            return
-        if longitud > limite:
-            await self._enviar_json(send, 413, f"Cuerpo de petición demasiado grande. Máximo: {limite} bytes.")
-            return
-        await self.app(scope, receive, send)
+            if exige_longitud:
+                await self._enviar_json(send, 411, "Content-Length requerido para esta operación.")
+                return
+        else:
+            try:
+                longitud = int(raw_len.decode("ascii"))
+            except (ValueError, UnicodeDecodeError):
+                await self._enviar_json(send, 400, "Content-Length inválido.")
+                return
+            if longitud > limite:
+                await self._enviar_json(send, 413, f"Cuerpo de petición demasiado grande. Máximo: {limite} bytes.")
+                return
+
+        recibido = 0
+        respuesta_iniciada = False
+        rechazado = False
+
+        async def receive_limitado():
+            # Al superar el límite se responde 413 desde aquí mismo y la app
+            # recibe una desconexión: deja de leer y su respuesta se descarta.
+            # (Lanzar una excepción desde receive no sirve: las capas
+            # BaseHTTPMiddleware la envuelven y FastAPI acaba devolviendo 400.)
+            nonlocal recibido, rechazado
+            if rechazado:
+                return {"type": "http.disconnect"}
+            mensaje = await receive()
+            if mensaje.get("type") == "http.request":
+                recibido += len(mensaje.get("body", b"") or b"")
+                if recibido > limite:
+                    rechazado = True
+                    if not respuesta_iniciada:
+                        await self._enviar_json(send, 413, f"Cuerpo de petición demasiado grande. Máximo: {limite} bytes.")
+                    return {"type": "http.disconnect"}
+            return mensaje
+
+        async def send_vigilado(mensaje):
+            nonlocal respuesta_iniciada
+            if rechazado:
+                return
+            if mensaje.get("type") == "http.response.start":
+                respuesta_iniciada = True
+            await send(mensaje)
+
+        await self.app(scope, receive_limitado, send_vigilado)
 
     @staticmethod
-    def _limite_para(metodo: str, ruta: str) -> int | None:
-        if metodo not in {"POST", "PUT", "PATCH"}:
+    def _limite_para(metodo: str, ruta: str) -> tuple[int, bool] | None:
+        """Devuelve (límite_en_bytes, exige_content_length) o None."""
+        if metodo not in {"POST", "PUT", "PATCH", "DELETE"}:
             return None
         if ruta == "/api/describir":
-            return MAX_DESCRIBIR_BODY_BYTES
+            return MAX_DESCRIBIR_BODY_BYTES, True
         if ruta.startswith("/api/exportar/"):
-            return MAX_EXPORT_BODY_BYTES
-        return None
+            return MAX_EXPORT_BODY_BYTES, True
+        if ruta == "/api/lote" and metodo == "POST":
+            return MAX_LOTE_BODY_BYTES, True
+        if ruta.startswith("/api/auth/"):
+            return MAX_AUTH_BODY_BYTES, False
+        return MAX_BODY_BYTES_DEFECTO, False
 
     @staticmethod
     async def _enviar_json(send: Send, status_code: int, detail: str) -> None:
@@ -321,6 +386,25 @@ def _parsear_etiquetas(etiquetas: str | None, total: int) -> list[str]:
     return out[:total]
 
 
+def bytes_imagenes_documento(doc: router_entrada.DocumentoProcesado) -> int:
+    """Bytes de imagen que un documento procesado retiene en memoria."""
+    return sum(len(img) for img in (doc.entrada.imagenes or []))
+
+
+def comprobar_presupuesto_imagenes(acumulado: int, doc: router_entrada.DocumentoProcesado) -> int:
+    """Suma las imágenes de `doc` al acumulado de la petición y lanza
+    ErrorValidacion si se supera MAX_BYTES_IMAGENES_PETICION. Devuelve el nuevo
+    acumulado. Compartido por /api/describir y el worker de lotes."""
+    total = acumulado + bytes_imagenes_documento(doc)
+    if total > MAX_BYTES_IMAGENES_PETICION:
+        mb = MAX_BYTES_IMAGENES_PETICION // (1024 * 1024)
+        raise ErrorValidacion(
+            "el conjunto genera demasiadas imágenes para una sola descripción "
+            f"(máximo {mb} MB en total). Divida los ficheros en varias descripciones."
+        )
+    return total
+
+
 def _fusionar_documentos(docs: list[tuple[router_entrada.DocumentoProcesado, str, str | None]]) -> ConjuntoProcesado:
     textos: list[str] = []
     imagenes: list[bytes] = []
@@ -396,12 +480,17 @@ async def describir(
     async with _SEM_PROCESAMIENTO:
         _log_peticion("describir_inicio", peticion_id, norma=norma, modo=modo, modelo=modelo_seleccionado, archivos=len(ficheros), _incognito=incognito_modo)
         procesados: list[tuple[router_entrada.DocumentoProcesado, str, str | None]] = []
+        bytes_imagenes_acumulados = 0
         for archivo, etiqueta in zip(ficheros, etiquetas_lista, strict=False):
             nombre_seguro = _sanear_texto_corto(archivo.filename or "sin_nombre", 180, "sin_nombre")
             contenido = await archivo.read()
             sha256 = hashlib.sha256(contenido).hexdigest() if INCLUIR_HASH_DOCUMENTO_AUDITORIA else None
             try:
-                doc = router_entrada.procesar(contenido, nombre_seguro)
+                # procesar() es síncrono (sandbox con espera activa de hasta
+                # SANDBOX_TIMEOUT_SEGUNDOS): en un hilo para no congelar el
+                # event loop, igual que hace el worker de lotes.
+                doc = await asyncio.to_thread(router_entrada.procesar, contenido, nombre_seguro)
+                bytes_imagenes_acumulados = comprobar_presupuesto_imagenes(bytes_imagenes_acumulados, doc)
             except ErrorValidacion as e:
                 _log_peticion("archivo_validacion_fallida", peticion_id, nombre=nombre_seguro, error=str(e))
                 raise HTTPException(400, f"{nombre_seguro or 'archivo'}: {e}") from None

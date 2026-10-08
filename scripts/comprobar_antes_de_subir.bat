@@ -4,6 +4,11 @@ REM Comprobacion pre-subida a GitHub (Windows)
 REM ============================================================================
 REM Ejecutar ANTES de hacer git push, para verificar que no se cuela nada
 REM de las pruebas locales (.env, documentos personales, caches, etc).
+REM
+REM Seguridad: los nombres de fichero nunca pasan por una tuberia ("|") dentro
+REM de un bucle FOR. En una tuberia, cmd.exe vuelve a interpretar el texto ya
+REM expandido en un proceso hijo, de modo que un nombre como "a&calc.md"
+REM ejecutaria "calc". Aqui la extension se comprueba con operaciones de cadena.
 REM ============================================================================
 setlocal enabledelayedexpansion
 
@@ -26,14 +31,27 @@ git status --short
 echo.
 
 echo -- Comprobacion de .env --
-git ls-files 2>nul | findstr /R "^\.env$ /\.env$" >nul 2>&1
+REM Detecta .env y variantes (.env.local, .env.prod...) salvo .env.example.
+REM La salida de git va directa a findstr: no hay variables FOR en la tuberia.
+git ls-files 2>nul | findstr /R /C:"^\.env" /C:"/\.env" | findstr /V /R /C:"\.env\.example$" >nul 2>&1
 if !errorlevel! equ 0 (
     echo PELIGRO: hay ficheros .env rastreados por git:
-    git ls-files | findstr /R "^\.env$ /\.env$"
-    echo   Ejecuta: git rm --cached .env
+    git ls-files | findstr /R /C:"^\.env" /C:"/\.env" | findstr /V /R /C:"\.env\.example$"
+    echo   Ejecuta: git rm --cached ^<fichero^>
     set /a PROBLEMAS+=1
 ) else (
     echo OK: ningun .env rastreado
+)
+
+echo.
+echo -- Comprobacion de claves y certificados --
+git ls-files 2>nul | findstr /R /I /C:"\.key$" /C:"\.pem$" /C:"\.p12$" /C:"\.pfx$" >nul 2>&1
+if !errorlevel! equ 0 (
+    echo PELIGRO: hay claves o certificados rastreados:
+    git ls-files | findstr /R /I /C:"\.key$" /C:"\.pem$" /C:"\.p12$" /C:"\.pfx$"
+    set /a PROBLEMAS+=1
+) else (
+    echo OK: sin claves ni certificados rastreados
 )
 
 echo.
@@ -49,14 +67,21 @@ if !errorlevel! equ 0 (
 
 echo.
 echo -- Comprobacion de documentos de prueba --
-for /f "delims=" %%f in ('git ls-files ejemplos/ 2^>nul') do (
-    echo %%f | findstr /E ".md" >nul
-    if !errorlevel! neq 0 (
-        echo AVISO: %%f no es .md
+set EJEMPLOS_EXTRA=0
+for /f "delims=" %%f in ('git -c core.quotePath^=false ls-files -- ejemplos/ 2^>nul') do (
+    set "NOMBRE=%%f"
+    if /i not "!NOMBRE:~-3!"==".md" (
+        echo AVISO: !NOMBRE! no es .md
         set /a PROBLEMAS+=1
+        set EJEMPLOS_EXTRA=1
     )
 )
-if !PROBLEMAS! equ 0 echo OK: ejemplos/ contiene solo documentacion
+if !EJEMPLOS_EXTRA! equ 0 (
+    echo OK: ejemplos/ contiene solo documentacion
+) else (
+    echo   Si son documentos reales de pruebas, quitalos antes de subir:
+    echo     git rm --cached ejemplos/^<fichero^>
+)
 
 echo.
 echo ===========================================================================
