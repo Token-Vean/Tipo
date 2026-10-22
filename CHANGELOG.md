@@ -3,6 +3,21 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Tipo sigue [versionado semántico](https://semver.org/lang/es/) en su variante beta.
 
+## [Sin publicar]
+
+### Seguridad
+
+- **Pillow** 12.3.0 → **13.0.0**: 4 avisos críticos y 23 altos (desbordamientos
+  de heap en los decodificadores TIFF y JPEG y en FreeType, inyección de
+  argumentos en la llamada a Ghostscript, lecturas fuera de límites). Tipo
+  decodifica imágenes y PDF aportados por el usuario. Pillow 13 exige Python
+  3.11 o superior; la imagen Docker ya usa 3.12 y `requires-python` ya era
+  `>=3.11`.
+- **pypdf** 6.19.0 → **6.21.2**: 7 avisos moderados y 1 bajo de denegación de
+  servicio por PDF manipulado.
+- **certifi** 2026.4.22 → **2026.10.19**: retira las raíces emSign cuyas CA
+  intermedias quedaron comprometidas.
+
 ## [0.3.0-beta.2] — 2026-07-15
 
 Release de **seguridad**. No cambia funcionalidad ni interfaz: corrige una

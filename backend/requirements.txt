@@ -37,6 +37,17 @@
 #                                         dominios internacionalizados) y
 #                                         CVE-2026-64847. Tipo solo habla HTTP
 #                                         con Ollama local, pero se corrige igual.
+#
+# Actualizaciones de seguridad (GitHub Advisory Database, 22 octubre 2026):
+#   - Pillow            12.3.0 -> 13.0.0  4 críticos y 23 altos: desbordamientos
+#                                         de heap en TIFF/JPEG/FreeType, inyección
+#                                         de argumentos en Ghostscript, lecturas
+#                                         fuera de límites. 13.0.0 exige Python
+#                                         >= 3.11 (la imagen ya usa 3.12).
+#   - pypdf             6.19.0 -> 6.21.2  7 moderados y 1 bajo de DoS por PDF
+#                                         manipulado (corregidos en 6.21.1).
+#   - certifi           2026.4.22 -> 2026.10.19  Retira raíces emSign cuyas CA
+#                                         intermedias se comprometieron.
 # =============================================================================
 
 # Web / API
@@ -53,10 +64,10 @@ anyio==4.14.2
 pyyaml==6.0.3
 
 # Procesamiento de documentos
-pypdf==6.19.0
+pypdf==6.21.2
 pypdfium2==5.7.1
 python-docx==1.2.0
-Pillow==12.3.0
+Pillow==13.0.0
 
 # Dependencias transitivas fijadas (para reproducibilidad total)
 pydantic==2.13.3
@@ -71,6 +82,6 @@ python-dotenv==1.2.2
 uvloop==0.22.1 ; sys_platform != "win32"
 watchfiles==1.1.1
 websockets==16.0
-certifi==2026.4.22
+certifi==2026.10.19
 idna==3.15
 lxml==6.1.0
