@@ -3,6 +3,35 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Tipo sigue [versionado semántico](https://semver.org/lang/es/) en su variante beta.
 
+## [Sin publicar]
+
+### Seguridad
+
+- **Pillow** 12.3.0 → **13.0.0**: 4 avisos críticos y 23 altos (desbordamientos
+  de heap en los decodificadores TIFF y JPEG y en FreeType, inyección de
+  argumentos en la llamada a Ghostscript, lecturas fuera de límites). Tipo
+  decodifica imágenes y PDF aportados por el usuario. Pillow 13 exige Python
+  3.11 o superior; la imagen Docker ya usa 3.12 y `requires-python` ya era
+  `>=3.11`.
+- **pypdf** 6.19.0 → **6.21.2**: 7 avisos moderados y 1 bajo de denegación de
+  servicio por PDF manipulado.
+- **certifi** 2026.4.22 → **2026.10.19**: retira las raíces emSign cuyas CA
+  intermedias quedaron comprometidas.
+- **Controles de seguridad fijados en `docker-compose.yml`.** La imagen de
+  Ollama (`OLLAMA_IMAGE`), el sandbox de parsers (`USAR_SANDBOX_PARSERS`,
+  `SANDBOX_TIMEOUT_SEGUNDOS`, `SANDBOX_MEMORIA_MB`), `ALLOW_REMOTE_OLLAMA`,
+  `ALLOW_NETWORK_EXPOSURE` y `TIPO_AUTH_DISABLED` se leían de `.env`: un `.env`
+  manipulado o heredado podía sustituir el contenedor que recibe el texto de
+  los documentos, desactivar el aislamiento de los parsers o el inicio de
+  sesión sin aviso. Pasan a ser literales en ambos servicios (`app` y
+  `app-external`), igual que en PlumA, y desaparecen de `.env.example`.
+  `tests/test_configuracion_bloqueada.py` impide que vuelvan a ser variables.
+
+### Notas para la actualización
+
+- Si su `.env` define alguna de esas variables, ya no tiene efecto. Para
+  cambiarlas hay que editar `docker-compose.yml`.
+
 ## [0.3.0-beta.2] — 2026-07-15
 
 Release de **seguridad**. No cambia funcionalidad ni interfaz: corrige una
