@@ -200,11 +200,10 @@ PUERTO=8082
 MODELO_BASE=gemma4:e4b
 MODELO_NOMBRE=gemma4:e4b
 TIPO_CREAR_MODELO_DERIVADO=false
-TIPO_AUTH_DISABLED=false
-ALLOW_REMOTE_OLLAMA=false
-ALLOW_NETWORK_EXPOSURE=false
 PERMITIR_APAGADO_UI=true
 ```
+
+Los controles de seguridad (`TIPO_AUTH_DISABLED`, `ALLOW_REMOTE_OLLAMA`, `ALLOW_NETWORK_EXPOSURE`, el sandbox de parsers y la imagen de Ollama) están fijados en `docker-compose.yml` y no se leen de `.env`. Cambiarlos exige editar ese fichero.
 
 Variables opcionales para procesamiento por lotes:
 

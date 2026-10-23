@@ -13,13 +13,24 @@
 #
 # El instalador exporta COMPOSE_PROFILES con el perfil correcto antes
 # de llamar a `docker compose up`.
+#
+# Controles de seguridad fijados en este fichero (no se leen de .env):
+#   imagen de Ollama (por digest), USAR_SANDBOX_PARSERS,
+#   SANDBOX_TIMEOUT_SEGUNDOS, SANDBOX_MEMORIA_MB, ALLOW_REMOTE_OLLAMA,
+#   ALLOW_NETWORK_EXPOSURE y TIPO_AUTH_DISABLED.
+# Un .env manipulado o heredado de una instalación antigua podía sustituir
+# el contenedor que recibe el texto íntegro de los documentos, apagar el
+# aislamiento de los parsers o desactivar el inicio de sesión sin que nada
+# avisara. Cambiarlos exige editar este fichero: decisión consciente y
+# auditable, igual que en PlumA. tests/test_configuracion_bloqueada.py lo
+# comprueba.
 # =============================================================================
 
 services:
 
   # ---------- Ollama en contenedor (perfil "bundled") ----------------------
   ollama:
-    image: ${OLLAMA_IMAGE:-ollama/ollama@sha256:7db82c93ff9fae4011a2aa10931b1d2c2a228d508b8736366e3fbaee616b2e8c}
+    image: ollama/ollama@sha256:7db82c93ff9fae4011a2aa10931b1d2c2a228d508b8736366e3fbaee616b2e8c
     container_name: tipo-ollama
     profiles: ["bundled"]
     volumes:
@@ -59,14 +70,14 @@ services:
       MODELFILE_PATH: /app/Modelfile
       PERFIL: bundled
       PUERTO: "8081"
-      USAR_SANDBOX_PARSERS: ${USAR_SANDBOX_PARSERS:-true}
-      SANDBOX_TIMEOUT_SEGUNDOS: ${SANDBOX_TIMEOUT_SEGUNDOS:-90}
-      SANDBOX_MEMORIA_MB: ${SANDBOX_MEMORIA_MB:-1536}
-      ALLOW_REMOTE_OLLAMA: ${ALLOW_REMOTE_OLLAMA:-false}
-      ALLOW_NETWORK_EXPOSURE: ${ALLOW_NETWORK_EXPOSURE:-false}
+      USAR_SANDBOX_PARSERS: "true"
+      SANDBOX_TIMEOUT_SEGUNDOS: "90"
+      SANDBOX_MEMORIA_MB: "1536"
+      ALLOW_REMOTE_OLLAMA: "false"
+      ALLOW_NETWORK_EXPOSURE: "false"
       INCLUIR_HASH_DOCUMENTO_AUDITORIA: ${INCLUIR_HASH_DOCUMENTO_AUDITORIA:-true}
       PERMITIR_APAGADO_UI: ${PERMITIR_APAGADO_UI:-true}
-      TIPO_AUTH_DISABLED: ${TIPO_AUTH_DISABLED:-false}
+      TIPO_AUTH_DISABLED: "false"
       TIPO_DATA_DIR: /app/data
       TIPO_SESSION_TTL_SECONDS: ${TIPO_SESSION_TTL_SECONDS:-43200}
       TIPO_PASSWORD_MIN_LENGTH: ${TIPO_PASSWORD_MIN_LENGTH:-10}
@@ -130,14 +141,14 @@ services:
       MODELFILE_PATH: /app/Modelfile
       PERFIL: external
       PUERTO: "8081"
-      USAR_SANDBOX_PARSERS: ${USAR_SANDBOX_PARSERS:-true}
-      SANDBOX_TIMEOUT_SEGUNDOS: ${SANDBOX_TIMEOUT_SEGUNDOS:-90}
-      SANDBOX_MEMORIA_MB: ${SANDBOX_MEMORIA_MB:-1536}
-      ALLOW_REMOTE_OLLAMA: ${ALLOW_REMOTE_OLLAMA:-false}
-      ALLOW_NETWORK_EXPOSURE: ${ALLOW_NETWORK_EXPOSURE:-false}
+      USAR_SANDBOX_PARSERS: "true"
+      SANDBOX_TIMEOUT_SEGUNDOS: "90"
+      SANDBOX_MEMORIA_MB: "1536"
+      ALLOW_REMOTE_OLLAMA: "false"
+      ALLOW_NETWORK_EXPOSURE: "false"
       INCLUIR_HASH_DOCUMENTO_AUDITORIA: ${INCLUIR_HASH_DOCUMENTO_AUDITORIA:-true}
       PERMITIR_APAGADO_UI: ${PERMITIR_APAGADO_UI:-true}
-      TIPO_AUTH_DISABLED: ${TIPO_AUTH_DISABLED:-false}
+      TIPO_AUTH_DISABLED: "false"
       TIPO_DATA_DIR: /app/data
       TIPO_SESSION_TTL_SECONDS: ${TIPO_SESSION_TTL_SECONDS:-43200}
       TIPO_PASSWORD_MIN_LENGTH: ${TIPO_PASSWORD_MIN_LENGTH:-10}

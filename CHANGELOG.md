@@ -17,6 +17,20 @@ Tipo sigue [versionado semántico](https://semver.org/lang/es/) en su variante b
   servicio por PDF manipulado.
 - **certifi** 2026.4.22 → **2026.10.19**: retira las raíces emSign cuyas CA
   intermedias quedaron comprometidas.
+- **Controles de seguridad fijados en `docker-compose.yml`.** La imagen de
+  Ollama (`OLLAMA_IMAGE`), el sandbox de parsers (`USAR_SANDBOX_PARSERS`,
+  `SANDBOX_TIMEOUT_SEGUNDOS`, `SANDBOX_MEMORIA_MB`), `ALLOW_REMOTE_OLLAMA`,
+  `ALLOW_NETWORK_EXPOSURE` y `TIPO_AUTH_DISABLED` se leían de `.env`: un `.env`
+  manipulado o heredado podía sustituir el contenedor que recibe el texto de
+  los documentos, desactivar el aislamiento de los parsers o el inicio de
+  sesión sin aviso. Pasan a ser literales en ambos servicios (`app` y
+  `app-external`), igual que en PlumA, y desaparecen de `.env.example`.
+  `tests/test_configuracion_bloqueada.py` impide que vuelvan a ser variables.
+
+### Notas para la actualización
+
+- Si su `.env` define alguna de esas variables, ya no tiene efecto. Para
+  cambiarlas hay que editar `docker-compose.yml`.
 
 ## [0.3.0-beta.2] — 2026-07-15
 
