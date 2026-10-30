@@ -27,6 +27,24 @@ Tipo sigue [versionado semántico](https://semver.org/lang/es/) en su variante b
   `app-external`), igual que en PlumA, y desaparecen de `.env.example`.
   `tests/test_configuracion_bloqueada.py` impide que vuelvan a ser variables.
 
+### Licencia
+
+- `LICENSE` y `frontend/static/LICENSE.txt` no contenían el texto íntegro de la
+  AGPL-3.0: solo el aviso abreviado y una nota de «paso pendiente antes de
+  publicar». Además, el titular figuraba como «Víctor Villapalos Sánchez». Ahora
+  `LICENSE` lleva el texto íntegro y `LICENSE.txt` (el que enlaza la interfaz)
+  añade el aviso de copyright correcto, Víctor Villapalos Pardiñas, y el enlace
+  al código fuente.
+
+### Cambiado
+
+- Versión unificada en 0.3.0-beta.2, la última publicada en este fichero:
+  `VERSION` decía 0.2.0-beta.7, `app/version.py` 0.3.0-beta.1 y
+  `pyproject.toml` 0.3.0b1. También se actualizan el instalador, el panel de
+  Windows, `.env.example` y `scripts/crear_release_windows.ps1`.
+- Se retira `README_Tipo_actualizado_v0.3.0-beta.1.md`, una copia antigua del
+  README que aún describía los controles de seguridad como variables de `.env`.
+
 ### Notas para la actualización
 
 - Si su `.env` define alguna de esas variables, ya no tiene efecto. Para
