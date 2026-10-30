@@ -14,7 +14,7 @@ REM Usar IPv4 explícito evita fallos en Windows cuando localhost resuelve a ::1
 set "TIPO_LOCAL_HOST=127.0.0.1"
 
 echo.
-echo Tipo 0.2.0-beta.7 - instalacion local
+echo Tipo 0.3.0-beta.2 - instalacion local
 echo ----------------------------------------
 echo.
 

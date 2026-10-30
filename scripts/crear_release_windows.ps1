@@ -2,7 +2,7 @@
 # Tipo - creación de paquete ZIP de release para Windows
 # -----------------------------------------------------------------------------
 # Ejecutar desde la raíz del repositorio:
-#   powershell -ExecutionPolicy Bypass -File scripts\crear_release_windows.ps1 -Version 0.2.0-beta.7
+#   powershell -ExecutionPolicy Bypass -File scripts\crear_release_windows.ps1 -Version 0.3.0-beta.2
 #
 # Resultado:
 #   dist\Tipo-<version>-windows.zip
@@ -29,7 +29,7 @@
 # =============================================================================
 
 param(
-    [string]$Version = "0.2.0-beta.7",
+    [string]$Version = "0.3.0-beta.2",
     [string]$Ref = "HEAD",
     [switch]$PermitirArbolSucio
 )

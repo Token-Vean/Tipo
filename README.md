@@ -8,7 +8,7 @@
 
 > Sube uno o varios libros, revisa la propuesta bibliográfica y exporta los resultados en MARCXML, MARC21 texto, ISBD, JSON o CSV, sin enviar los documentos a servicios externos.
 
-**Versión actual:** `0.3.0-beta.1`  
+**Versión actual:** `0.3.0-beta.2`  
 **Estado:** beta, apta para entornos profesionales con supervisión.  
 **Ámbito:** monografía moderna impresa.  
 **Modelo de uso:** local-first, con Docker y Ollama.
@@ -299,9 +299,11 @@ docs/PROMPT_MODELO_TIPO.md
 
 ---
 
-## Autoría
+## Autoría y licencia
 
-Autoría y desarrollo conceptual: **Víctor Villapalos**.
+Autoría y desarrollo conceptual: **Víctor Villapalos Pardiñas**.
 
-© 2026 Víctor Villapalos.
+Tipo se distribuye bajo la **GNU Affero General Public License v3 o posterior** (AGPL-3.0-or-later). Ver [`LICENSE`](LICENSE).
+
+Copyright (C) 2026 Víctor Villapalos Pardiñas.
 
