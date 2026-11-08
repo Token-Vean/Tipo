@@ -144,7 +144,7 @@ chmod +x instalar.sh detener.sh desinstalar.sh
 La aplicación se abre por defecto en:
 
 ```text
-http://localhost:8082
+http://localhost:8769
 ```
 
 En macOS, Docker Desktop debe estar instalado y en ejecución. Ollama nativo es opcional; si no existe, Tipo puede usar Ollama dentro de Docker.
@@ -196,7 +196,7 @@ La configuración local se crea desde `.env.example` y queda en `.env`. El fiche
 Variables principales:
 
 ```text
-PUERTO=8082
+PUERTO=8769
 MODELO_BASE=gemma4:e4b
 MODELO_NOMBRE=gemma4:e4b
 TIPO_CREAR_MODELO_DERIVADO=false
