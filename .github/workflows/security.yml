@@ -55,9 +55,7 @@ jobs:
           if command -v pip-audit >/dev/null 2>&1; then
             pip-audit -r backend/requirements.txt -f json -o pip-audit-results.json || true
           else
-            cat > pip-audit-results.json <<'JSON'
-            {"status":"not-run","reason":"pip-audit command not available"}
-            JSON
+            printf '%s\n' '{"status":"not-run","reason":"pip-audit command not available"}' > pip-audit-results.json
           fi
 
       - name: pip-audit blocking gate (vulnerabilidades con corrección disponible)
@@ -77,34 +75,10 @@ jobs:
         continue-on-error: true
         run: |
           if command -v cyclonedx-py >/dev/null 2>&1; then
-            cyclonedx-py environment -o sbom-python.cdx.json || \
-            cyclonedx-py requirements backend/requirements.txt -o sbom-python.cdx.json || \
-            python - <<'PY'
-          import json
-          from pathlib import Path
-          Path('sbom-python.cdx.json').write_text(json.dumps({
-              'bomFormat': 'CycloneDX',
-              'specVersion': '1.6',
-              'version': 1,
-              'metadata': {'component': {'name': 'Tipo', 'type': 'application'}},
-              'components': [],
-              'properties': [{'name': 'tipo.sbom.status', 'value': 'fallback-generated'}]
-          }, indent=2), encoding='utf-8')
-          PY
-          else
-            python - <<'PY'
-          import json
-          from pathlib import Path
-          Path('sbom-python.cdx.json').write_text(json.dumps({
-              'bomFormat': 'CycloneDX',
-              'specVersion': '1.6',
-              'version': 1,
-              'metadata': {'component': {'name': 'Tipo', 'type': 'application'}},
-              'components': [],
-              'properties': [{'name': 'tipo.sbom.status', 'value': 'cyclonedx-py-not-available'}]
-          }, indent=2), encoding='utf-8')
-          PY
+            cyclonedx-py environment -o sbom-python.cdx.json || cyclonedx-py requirements backend/requirements.txt -o sbom-python.cdx.json || true
           fi
+          if [ ! -s sbom-python.cdx.json ]; then
+            python -c "import json; from pathlib import Path; Path('sbom-python.cdx.json').write_text(json.dumps({'bomFormat':'CycloneDX','specVersion':'1.6','version':1,'metadata':{'component':{'name':'Tipo','type':'application'}},'components':[],'properties':[{'name':'tipo.sbom.status','value':'fallback-generated'}]}, indent=2), encoding='utf-8')"
 
       - name: Add Python security summary
         if: always()
