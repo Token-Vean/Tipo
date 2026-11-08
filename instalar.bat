@@ -120,7 +120,7 @@ REM ----------------------------------------------------------------------------
 echo.
 echo [4/10] Comprobando puerto de la aplicacion...
 
-set PUERTO=8082
+set PUERTO=8769
 if exist .env (
     for /f "tokens=2 delims==" %%a in ('findstr /b "PUERTO=" .env 2^>nul') do set PUERTO=%%a
 )
