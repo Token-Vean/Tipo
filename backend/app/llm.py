@@ -81,6 +81,22 @@ def _validar_ollama_url(url: str) -> None:
 
 _validar_ollama_url(OLLAMA_URL)
 
+def es_modelo_cloud(nombre: str) -> bool:
+    """Detecta etiquetas de Ollama que delegan la inferencia en su servicio cloud."""
+    n = (nombre or "").strip().lower()
+    if ":" not in n:
+        return False
+    tag = n.rsplit(":", 1)[1]
+    return tag == "cloud" or tag.endswith("-cloud")
+
+
+def validar_modelo_local(nombre: str) -> None:
+    if es_modelo_cloud(nombre):
+        raise RuntimeError(
+            "Tipo está configurado para procesamiento local y rechaza modelos cloud de Ollama "
+            f"({nombre}). Seleccione un modelo descargado que no use una etiqueta :cloud."
+        )
+
 
 # -----------------------------------------------------------------------------
 # Llamadas al modelo
@@ -100,6 +116,8 @@ async def generar(
     fuerza JSON nativo de Ollama. La temperatura baja privilegia salidas
     reproducibles frente a creatividad.
     """
+    validar_modelo_local(modelo)
+
     payload: dict[str, Any] = {
         "model": modelo,
         "prompt": prompt,
@@ -205,7 +223,12 @@ async def modelos_disponibles(detallado: bool = False) -> list[Any]:
     async with httpx.AsyncClient(timeout=TIMEOUT) as cliente:
         resp = await cliente.get(f"{OLLAMA_URL}/api/tags")
         resp.raise_for_status()
-        raw_models = [m for m in resp.json().get("models", []) if isinstance(m, dict) and (m.get("name") or m.get("model"))]
+        raw_models = [
+            m for m in resp.json().get("models", [])
+            if isinstance(m, dict)
+            and (m.get("name") or m.get("model"))
+            and not es_modelo_cloud(str(m.get("name") or m.get("model")))
+        ]
     if not detallado:
         return [str(m.get("name") or m.get("model")) for m in raw_models]
     recomendado = os.getenv("MODELO_NOMBRE", "gemma4:e4b")
