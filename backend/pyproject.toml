@@ -6,7 +6,7 @@ readme = "../README.md"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-or-later" }
 authors = [
-    { name = "tipo" },
+    { name = "Víctor Villapalos Pardiñas" },
 ]
 keywords = ["bibliotecas", "MARC21", "ISBD", "catalogación", "IA", "Ollama"]
 classifiers = [
