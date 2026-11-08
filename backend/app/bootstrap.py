@@ -40,6 +40,13 @@ MODELFILE_PATH = Path(os.getenv("MODELFILE_PATH", "/app/Modelfile"))
 PERFIL = os.getenv("PERFIL", "bundled").strip().lower()
 TIPO_CREAR_MODELO_DERIVADO = os.getenv("TIPO_CREAR_MODELO_DERIVADO", "false").strip().lower() in {"1", "true", "yes", "si", "sí", "on"}
 
+def _es_modelo_cloud(nombre: str) -> bool:
+    n = (nombre or "").strip().lower()
+    if ":" not in n:
+        return False
+    tag = n.rsplit(":", 1)[1]
+    return tag == "cloud" or tag.endswith("-cloud")
+
 estado: dict = {
     "fase": "iniciando",
     "mensaje": "",
@@ -70,6 +77,11 @@ def _timeout_largo() -> httpx.Timeout:
 
 async def preparar() -> None:
     try:
+        if _es_modelo_cloud(MODELO_BASE) or _es_modelo_cloud(MODELO_NOMBRE):
+            raise RuntimeError(
+                "Tipo no admite modelos cloud de Ollama en modo local. "
+                "Use una etiqueta de modelo local sin :cloud."
+            )
         await _esperar_ollama()
         await _asegurar_modelo_base()
         if TIPO_CREAR_MODELO_DERIVADO and MODELO_NOMBRE != MODELO_BASE:
