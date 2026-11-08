@@ -81,7 +81,7 @@ fi
 # -----------------------------------------------------------------------------
 paso "Comprobando puerto de la aplicación"
 
-PUERTO=8082
+PUERTO=8769
 if [[ -f .env ]] && grep -q "^PUERTO=" .env; then
     PUERTO=$(grep "^PUERTO=" .env | head -1 | cut -d= -f2)
 fi
