@@ -44,7 +44,7 @@
 #                                         de argumentos en Ghostscript, lecturas
 #                                         fuera de límites. 13.0.0 exige Python
 #                                         >= 3.11 (la imagen ya usa 3.12).
-#   - pypdf             6.19.0 -> 6.21.2  7 moderados y 1 bajo de DoS por PDF
+#   - pypdf             6.19.0 -> 6.21.4  7 moderados y 1 bajo de DoS por PDF
 #                                         manipulado (corregidos en 6.21.1).
 #   - certifi           2026.4.22 -> 2026.10.19  Retira raíces emSign cuyas CA
 #                                         intermedias se comprometieron.
@@ -64,7 +64,7 @@ anyio==4.14.2
 pyyaml==6.0.3
 
 # Procesamiento de documentos
-pypdf==6.21.2
+pypdf==6.21.4
 pypdfium2==5.7.1
 python-docx==1.2.0
 Pillow==13.0.0
