@@ -97,7 +97,7 @@ services:
       MAX_LONGITUD_VALOR_EXPORTACION: ${MAX_LONGITUD_VALOR_EXPORTACION:-50000}
       MAX_LONGITUD_EVIDENCIA_EXPORTACION: ${MAX_LONGITUD_EVIDENCIA_EXPORTACION:-8000}
     ports:
-      - "127.0.0.1:${PUERTO:-8082}:8081"
+      - "127.0.0.1:${PUERTO:-8769}:8081"
     volumes:
       - ./schemas:/app/schemas:ro
       - ./Modelfile:/app/Modelfile:ro
@@ -170,7 +170,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "127.0.0.1:${PUERTO:-8082}:8081"
+      - "127.0.0.1:${PUERTO:-8769}:8081"
     volumes:
       - ./schemas:/app/schemas:ro
       - ./Modelfile:/app/Modelfile:ro
