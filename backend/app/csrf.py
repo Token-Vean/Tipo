@@ -71,8 +71,8 @@ def _origen_coincide_con_host(origen: str, request: Request) -> bool:
     """
     Exige que Origin/Referer sea exactamente el mismo origen local de la app.
 
-    Ejemplo válido: Host localhost:8082 y Origin http://localhost:8082.
-    Ejemplo rechazado: Host localhost:8082 y Origin http://localhost:9999.
+    Ejemplo válido: Host localhost:8769 y Origin http://localhost:8769.
+    Ejemplo rechazado: Host localhost:8769 y Origin http://localhost:9999.
     """
     try:
         origen_p = urlparse(origen)
