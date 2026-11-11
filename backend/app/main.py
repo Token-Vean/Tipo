@@ -65,11 +65,23 @@ app = FastAPI(
     openapi_url=None,
 )
 
-app.add_middleware(CabecerasSeguridad)
+# Starlette inserta cada middleware al principio de la pila: EL ÚLTIMO
+# REGISTRADO ES EL MÁS EXTERNO. Pila efectiva, de fuera hacia dentro:
+#
+#     CabecerasSeguridad       ← ve TODAS las respuestas, incluidos los
+#                                rechazos de los middlewares de abajo (403 de
+#                                Host, 401 de sesión, 411/413 de tamaño, 403
+#                                de CSRF). Antes era el más interno y esos
+#                                rechazos salían sin CSP ni X-Frame-Options.
+#     ProteccionAccesoLocal    ← rechaza por Host antes que nada más.
+#     ProteccionAutenticacion  ← exige sesión en /api/*.
+#     LimiteCuerpoPeticion     ← corta por Content-Length antes del parseo.
+#     ProteccionCSRF           ← exige Origin local + token sincronizado.
 app.add_middleware(ProteccionCSRF)
 app.add_middleware(LimiteCuerpoPeticion)
 app.add_middleware(ProteccionAutenticacion)
 app.add_middleware(ProteccionAccesoLocal)
+app.add_middleware(CabecerasSeguridad)
 app.include_router(auth.router, prefix="/api")
 app.include_router(api.router, prefix="/api")
 app.include_router(lotes_api.router, prefix="/api")

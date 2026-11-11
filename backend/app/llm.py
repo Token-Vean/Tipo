@@ -19,6 +19,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .http_local import cliente_local
+
 logger = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------------
@@ -135,7 +137,7 @@ async def generar(
     if imagenes:
         payload["images"] = [base64.b64encode(img).decode("ascii") for img in imagenes]
 
-    async with httpx.AsyncClient(timeout=TIMEOUT) as cliente:
+    async with cliente_local(TIMEOUT) as cliente:
         resp = await cliente.post(f"{OLLAMA_URL}/api/generate", json=payload)
         resp.raise_for_status()
         data = resp.json()
@@ -220,7 +222,7 @@ async def modelos_disponibles(detallado: bool = False) -> list[Any]:
     Con detallado=False mantiene compatibilidad y devuelve solo nombres.
     Con detallado=True devuelve metadatos enriquecidos para la interfaz.
     """
-    async with httpx.AsyncClient(timeout=TIMEOUT) as cliente:
+    async with cliente_local(TIMEOUT) as cliente:
         resp = await cliente.get(f"{OLLAMA_URL}/api/tags")
         resp.raise_for_status()
         raw_models = [
