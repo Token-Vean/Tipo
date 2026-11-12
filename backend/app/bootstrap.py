@@ -31,6 +31,8 @@ from pathlib import Path
 
 import httpx
 
+from .http_local import cliente_local
+
 logger = logging.getLogger(__name__)
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
@@ -99,7 +101,7 @@ async def preparar() -> None:
 async def _esperar_ollama(intentos: int = 30, espera: float = 2.0) -> None:
     estado.update(fase="esperando_ollama", mensaje="Esperando al motor de IA...")
 
-    async with httpx.AsyncClient(timeout=_timeout_rapido()) as cliente:
+    async with cliente_local(_timeout_rapido()) as cliente:
         for _ in range(intentos):
             try:
                 r = await cliente.get(f"{OLLAMA_URL}/api/tags")
@@ -136,7 +138,7 @@ async def _asegurar_modelo_base() -> None:
     )
     logger.info("Descargando %s...", MODELO_BASE)
 
-    async with httpx.AsyncClient(timeout=_timeout_largo()) as cliente:
+    async with cliente_local(_timeout_largo()) as cliente:
         async with cliente.stream(
             "POST", f"{OLLAMA_URL}/api/pull", json={"model": MODELO_BASE}
         ) as resp:
@@ -341,7 +343,7 @@ async def _crear_modelo_derivado() -> None:
                 len(payload.get("parameters", {})),
                 len(payload.get("messages", [])))
 
-    async with httpx.AsyncClient(timeout=_timeout_largo()) as cliente:
+    async with cliente_local(_timeout_largo()) as cliente:
         async with cliente.stream(
             "POST",
             f"{OLLAMA_URL}/api/create",
@@ -374,7 +376,7 @@ async def _modelo_existe(nombre: str) -> bool:
 
 
 async def _listar_modelos() -> list[str]:
-    async with httpx.AsyncClient(timeout=_timeout_rapido()) as cliente:
+    async with cliente_local(_timeout_rapido()) as cliente:
         r = await cliente.get(f"{OLLAMA_URL}/api/tags")
         r.raise_for_status()
         return [m["name"] for m in r.json().get("models", [])]

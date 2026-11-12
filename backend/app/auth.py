@@ -661,6 +661,13 @@ async def setup(payload: SetupPayload, response: Response, request: Request):
         raise HTTPException(400, "La autenticación está desactivada.")
     username = _validar_usuario(payload.username)
     _validar_password(payload.password)
+    # Comprobación barata antes del PBKDF2: una vez hecha la configuración
+    # inicial, este endpoint público responde 409 sin calcular ningún hash.
+    if hay_usuarios():
+        raise HTTPException(409, "La configuración inicial ya se ha realizado.")
+    # PBKDF2 (600 000 iteraciones) en un hilo: dentro del handler bloqueaba el
+    # event loop y, con él, el resto de peticiones y el worker de lotes.
+    password_hash = await asyncio.to_thread(_hash_password, payload.password)
     try:
         with _users_lock:
             with _db() as conn:
@@ -670,7 +677,7 @@ async def setup(payload: SetupPayload, response: Response, request: Request):
                 now = _now_iso()
                 conn.execute(
                     "INSERT INTO users(username, password_hash, role, disabled, created_at, password_changed_at) VALUES (?, ?, 'admin', 0, ?, ?)",
-                    (username, _hash_password(payload.password), now, now),
+                    (username, password_hash, now, now),
                 )
                 _record_event(conn, "admin_created", actor=username, target=username, client=request.client.host if request.client else "local")
     except HTTPException:
@@ -766,6 +773,7 @@ async def crear_usuario(payload: UsuarioNuevoPayload, request: Request):
     username = _validar_usuario(payload.username)
     _validar_password(payload.password)
     role = payload.role if payload.role in {"admin", "user"} else "user"
+    password_hash = await asyncio.to_thread(_hash_password, payload.password)
     with _users_lock:
         with _db() as conn:
             if conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
@@ -774,7 +782,7 @@ async def crear_usuario(payload: UsuarioNuevoPayload, request: Request):
             now = _now_iso()
             conn.execute(
                 "INSERT INTO users(username, password_hash, role, disabled, created_at, password_changed_at) VALUES (?, ?, ?, 0, ?, ?)",
-                (username, _hash_password(payload.password), role, now, now),
+                (username, password_hash, role, now, now),
             )
             _record_event(conn, "user_created", actor=admin.get("username"), target=username)
     return {"ok": True, "user": {"username": username, "role": role}}
@@ -790,10 +798,23 @@ async def cambiar_password(payload: CambiarPasswordPayload, request: Request):
     with _users_lock:
         with _db() as conn:
             user = _get_user(conn, username)
-            if not isinstance(user, dict) or not _verify_password(payload.current_password, str(user.get("password_hash", ""))):
-                raise HTTPException(401, "Contraseña actual incorrecta.")
+    hash_actual = str(user.get("password_hash", "")) if isinstance(user, dict) else ""
+    # Los dos PBKDF2 (verificar la actual y derivar la nueva) van a un hilo,
+    # fuera del lock de usuarios, para no bloquear el event loop.
+    if not hash_actual or not await asyncio.to_thread(_verify_password, payload.current_password, hash_actual):
+        raise HTTPException(401, "Contraseña actual incorrecta.")
+    nuevo_hash = await asyncio.to_thread(_hash_password, payload.new_password)
+    with _users_lock:
+        with _db() as conn:
             now = _now_iso()
-            conn.execute("UPDATE users SET password_hash = ?, password_changed_at = ?, updated_at = ? WHERE username = ?", (_hash_password(payload.new_password), now, now, username))
+            # La condición sobre el hash anterior evita pisar un cambio o
+            # reseteo hecho por otra petición mientras se calculaba el nuevo.
+            cur = conn.execute(
+                "UPDATE users SET password_hash = ?, password_changed_at = ?, updated_at = ? WHERE username = ? AND password_hash = ?",
+                (nuevo_hash, now, now, username, hash_actual),
+            )
+            if cur.rowcount != 1:
+                raise HTTPException(409, "La contraseña cambió durante la operación. Vuelva a intentarlo.")
             _record_event(conn, "password_changed", actor=username, target=username)
     _cerrar_sesiones_usuario(username, excepto_token=request.cookies.get(COOKIE_NAME))
     return {"ok": True}
@@ -804,6 +825,7 @@ async def resetear_password_usuario(username: str, payload: ResetPasswordPayload
     admin = _require_admin(request)
     username = _validar_usuario(username)
     _validar_password(payload.password)
+    password_hash = await asyncio.to_thread(_hash_password, payload.password)
     with _users_lock:
         with _db() as conn:
             if not conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
@@ -811,7 +833,7 @@ async def resetear_password_usuario(username: str, payload: ResetPasswordPayload
             now = _now_iso()
             conn.execute(
                 "UPDATE users SET password_hash = ?, password_changed_at = ?, updated_at = ?, password_reset_by = ? WHERE username = ?",
-                (_hash_password(payload.password), now, now, admin.get("username"), username),
+                (password_hash, now, now, admin.get("username"), username),
             )
             _record_event(conn, "password_reset", actor=admin.get("username"), target=username)
     _cerrar_sesiones_usuario(username)
