@@ -31,6 +31,7 @@ from pathlib import Path
 
 import httpx
 
+from . import llm
 from .http_local import cliente_local
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,9 @@ async def preparar() -> None:
             )
         await _esperar_ollama()
         await _asegurar_modelo_base()
+        # El modelo base debe ser local según los metadatos de Ollama, no solo
+        # por su nombre, antes de derivar de él el modelo de trabajo.
+        await llm.verificar_modelo_local(MODELO_BASE)
         if TIPO_CREAR_MODELO_DERIVADO and MODELO_NOMBRE != MODELO_BASE:
             await _crear_modelo_derivado()
         else:
