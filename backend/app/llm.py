@@ -32,6 +32,9 @@ ALLOW_REMOTE_OLLAMA = os.getenv("ALLOW_REMOTE_OLLAMA", "false").strip().lower() 
     "1", "true", "yes", "si", "sí", "on",
 }
 TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0)
+# Consulta de metadatos del modelo (/api/show) previa a cada inferencia. Es una
+# llamada local y ligera: un timeout corto evita que bloquee la petición.
+TIMEOUT_VERIFICACION_MODELO = httpx.Timeout(15.0, connect=5.0)
 NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "8192"))
 NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "32768"))
 
@@ -100,6 +103,67 @@ def validar_modelo_local(nombre: str) -> None:
         )
 
 
+# Campos con los que Ollama declara que un modelo es remoto: su inferencia no
+# se ejecuta en este equipo, sino en el host indicado (Ollama Cloud u otro).
+# Aparecen tanto en cada entrada de /api/tags como en la respuesta de /api/show.
+_CAMPOS_MODELO_REMOTO = ("remote_host", "remote_model")
+
+
+def es_entrada_remota(entrada: Any) -> bool:
+    """True si los metadatos de Ollama declaran el modelo como remoto.
+
+    La etiqueta ``:cloud`` es solo una convención de nombre: ``ollama cp
+    modelo:cloud mi-modelo`` produce un modelo sin esa etiqueta que sigue
+    enviando el texto a un servidor externo. Los campos ``remote_host`` y
+    ``remote_model`` acompañan al modelo aunque se renombre.
+    """
+    if not isinstance(entrada, dict):
+        return False
+    return any(str(entrada.get(campo) or "").strip() for campo in _CAMPOS_MODELO_REMOTO)
+
+
+async def verificar_modelo_local(nombre: str) -> None:
+    """Comprueba en Ollama, antes de enviar ningún documento, que el modelo es local.
+
+    Falla cerrado: si Ollama no confirma que el modelo es local (error HTTP,
+    respuesta ilegible o metadatos de modelo remoto), no se hace la inferencia.
+    Se consulta en cada llamada, sin caché, para que sustituir un modelo ya
+    comprobado por uno remoto con el mismo nombre no pase inadvertido.
+    """
+    validar_modelo_local(nombre)
+    try:
+        async with cliente_local(TIMEOUT_VERIFICACION_MODELO) as cliente:
+            resp = await cliente.post(f"{OLLAMA_URL}/api/show", json={"model": nombre})
+    except httpx.HTTPError as err:
+        raise RuntimeError(
+            f"No se pudo comprobar en Ollama que el modelo {nombre} es local "
+            "(/api/show no responde). No se envía el documento."
+        ) from err
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"No se pudo comprobar en Ollama que el modelo {nombre} es local "
+            f"(/api/show devolvió HTTP {resp.status_code}). No se envía el documento."
+        )
+    try:
+        datos = resp.json()
+    except ValueError as err:
+        raise RuntimeError(
+            f"No se pudo comprobar en Ollama que el modelo {nombre} es local "
+            "(respuesta ilegible de /api/show). No se envía el documento."
+        ) from err
+    if not isinstance(datos, dict):
+        raise RuntimeError(
+            f"No se pudo comprobar en Ollama que el modelo {nombre} es local "
+            "(respuesta inesperada de /api/show). No se envía el documento."
+        )
+    if es_entrada_remota(datos):
+        raise RuntimeError(
+            "Tipo está configurado para procesamiento local y rechaza modelos remotos de Ollama: "
+            f"{nombre} delega la inferencia en un servidor externo, aunque su nombre no lleve "
+            "la etiqueta :cloud. Seleccione un modelo descargado en este equipo."
+        )
+
+
 # -----------------------------------------------------------------------------
 # Llamadas al modelo
 # -----------------------------------------------------------------------------
@@ -118,7 +182,7 @@ async def generar(
     fuerza JSON nativo de Ollama. La temperatura baja privilegia salidas
     reproducibles frente a creatividad.
     """
-    validar_modelo_local(modelo)
+    await verificar_modelo_local(modelo)
 
     payload: dict[str, Any] = {
         "model": modelo,
@@ -230,6 +294,7 @@ async def modelos_disponibles(detallado: bool = False) -> list[Any]:
             if isinstance(m, dict)
             and (m.get("name") or m.get("model"))
             and not es_modelo_cloud(str(m.get("name") or m.get("model")))
+            and not es_entrada_remota(m)
         ]
     if not detallado:
         return [str(m.get("name") or m.get("model")) for m in raw_models]
