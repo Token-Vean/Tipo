@@ -22,7 +22,7 @@ chmod +x 1_instalar_linux_mac.sh
 La aplicación se abrirá en:
 
 ```text
-http://localhost:8082
+http://localhost:8769
 ```
 
 ## Límites importantes

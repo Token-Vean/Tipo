@@ -59,23 +59,23 @@ por zonas, extractor LLM y validaciones bibliográficas tal cual están.
 
 ## Prueba con curl
 
-Asumiendo Tipo arrancado en `http://localhost:8082`, usuario `admin` autenticado.
+Asumiendo Tipo arrancado en `http://localhost:8769`, usuario `admin` autenticado.
 Hay que mantener cookie de sesión y CSRF token. Atajo: hacer login con `curl -c`
 guardando cookies, luego pedir `/api/csrf` y usar el token en cabecera.
 
 ```bash
 # 1. Login (guarda cookie de sesión)
 curl -s -c cookies.txt -b cookies.txt -H 'Content-Type: application/json' \
-     -X POST http://localhost:8082/api/auth/login \
+     -X POST http://localhost:8769/api/auth/login \
      -d '{"username":"admin","password":"TU_PASSWORD"}' | jq .
 
 # 2. Pedir CSRF token
-CSRF=$(curl -s -b cookies.txt -c cookies.txt http://localhost:8082/api/csrf | jq -r .token)
+CSRF=$(curl -s -b cookies.txt -c cookies.txt http://localhost:8769/api/csrf | jq -r .token)
 
 # 3. Crear lote (3 libros como PDF; agrupacion "un_libro_por_fichero" por defecto)
 curl -s -b cookies.txt -c cookies.txt \
      -H "X-CSRF-Token: $CSRF" \
-     -X POST http://localhost:8082/api/lote \
+     -X POST http://localhost:8769/api/lote \
      -F 'ficheros=@libro1.pdf' \
      -F 'ficheros=@libro2.pdf' \
      -F 'ficheros=@libro3.pdf' \
@@ -87,20 +87,20 @@ curl -s -b cookies.txt -c cookies.txt \
 
 # 4. Pollear estado
 LOTE=abc123...
-curl -s -b cookies.txt http://localhost:8082/api/lote/$LOTE | jq '.lote, .items[] | {id, orden, estado}'
+curl -s -b cookies.txt http://localhost:8769/api/lote/$LOTE | jq '.lote, .items[] | {id, orden, estado}'
 
 # 5. Resultado individual
-curl -s -b cookies.txt http://localhost:8082/api/lote/$LOTE/item/<item_id> | jq .
+curl -s -b cookies.txt http://localhost:8769/api/lote/$LOTE/item/<item_id> | jq .
 
 # 6. Exportar lote completo en MARCXML como colección
-curl -s -b cookies.txt -O -J http://localhost:8082/api/lote/$LOTE/exportar/marcxml
+curl -s -b cookies.txt -O -J http://localhost:8769/api/lote/$LOTE/exportar/marcxml
 
 # 7. Exportar como ZIP con todos los formatos por libro + colección
-curl -s -b cookies.txt -O -J http://localhost:8082/api/lote/$LOTE/exportar/zip
+curl -s -b cookies.txt -O -J http://localhost:8769/api/lote/$LOTE/exportar/zip
 
 # 8. Cancelar pendientes (no interrumpe item en curso)
 curl -s -b cookies.txt -H "X-CSRF-Token: $CSRF" \
-     -X POST http://localhost:8082/api/lote/$LOTE/cancelar | jq .
+     -X POST http://localhost:8769/api/lote/$LOTE/cancelar | jq .
 ```
 
 Para el modo ZIP por libro:
@@ -108,7 +108,7 @@ Para el modo ZIP por libro:
 ```bash
 curl -s -b cookies.txt -c cookies.txt \
      -H "X-CSRF-Token: $CSRF" \
-     -X POST http://localhost:8082/api/lote \
+     -X POST http://localhost:8769/api/lote \
      -F 'agrupacion=un_libro_por_zip' \
      -F 'ficheros=@libro1.zip' \
      -F 'ficheros=@libro2.zip' \

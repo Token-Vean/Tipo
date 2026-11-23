@@ -11,7 +11,7 @@ $Root = Resolve-Path (Join-Path $ScriptDir "..\..")
 Set-Location $Root
 
 function Get-Port {
-    $port = "8082"
+    $port = "8769"
     $envFile = Join-Path $Root ".env"
     if (Test-Path $envFile) {
         $line = Get-Content $envFile -ErrorAction SilentlyContinue | Where-Object { $_ -match '^PUERTO=' } | Select-Object -First 1

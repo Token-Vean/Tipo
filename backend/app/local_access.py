@@ -10,13 +10,13 @@ Qué protege y qué NO protege:
 - SÍ protege frente a DNS rebinding: una web maliciosa que hace resolver su
   propio dominio a 127.0.0.1 envía su dominio en Host y queda rechazada.
 - SÍ evita que el navegador use la aplicación por una IP de red local
-  (http://192.168.x.x:8082) si el puerto llegara a publicarse por error.
+  (http://192.168.x.x:8769) si el puerto llegara a publicarse por error.
 - NO es un control de acceso de red. La cabecera Host la decide el cliente:
   cualquier programa que alcance el puerto puede enviar "Host: localhost".
 
 El control de red real es la publicación del puerto solo en loopback
 ("127.0.0.1:${PUERTO}:8081" en docker-compose.yml). No cambie esa línea a
-"0.0.0.0" ni use `-p 8082:8081` confiando en esta capa: si el puerto queda
+"0.0.0.0" ni use `-p 8769:8081` confiando en esta capa: si el puerto queda
 expuesto, solo la autenticación separa la aplicación de la red.
 """
 

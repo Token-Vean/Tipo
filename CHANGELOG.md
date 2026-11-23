@@ -5,6 +5,21 @@ Tipo sigue [versionado semántico](https://semver.org/lang/es/) en su variante b
 
 ## [Sin publicar]
 
+### Curso 2026
+
+- **Puerto 8769** (#18 y esta revisión): Tipo deja el 8082, que compartía con
+  PlumA, para que ambas puedan funcionar a la vez. Además de `docker-compose.yml`,
+  `.env.example`, los instaladores y el README, se actualizan el panel de
+  Windows (`tools/windows/Tipo-Control.ps1`, que abría 8082 si `.env` no
+  definía `PUERTO`), `INSTALACION.md`, `LEEME_PRIMERO.md`, `LEEME_PRIMERO.txt`,
+  los ejemplos de `README_LOTES.md` y los comentarios de `csrf.py` y
+  `local_access.py`.
+- **Retención de lotes**: `.env.example` fijaba `TIPO_LOTE_RETENCION_DIAS=0`
+  (sin límite). Como el instalador copia ese fichero a `.env`, anulaba los 30
+  días por defecto de `docker-compose.yml`. Ahora también dice 30.
+- Bloqueo de modelos de Ollama en la nube, PBKDF2 con 600 000 iteraciones,
+  `pypdf` 6.21.4 y Ollama con `restart: "no"` y `cap_drop: ALL` (#18).
+
 ### Seguridad
 
 - **Pillow** 12.3.0 → **13.0.0**: 4 avisos críticos y 23 altos (desbordamientos
@@ -49,6 +64,9 @@ Tipo sigue [versionado semántico](https://semver.org/lang/es/) en su variante b
 
 - Si su `.env` define alguna de esas variables, ya no tiene efecto. Para
   cambiarlas hay que editar `docker-compose.yml`.
+- El instalador no sobrescribe un `.env` existente. Si el suyo tiene
+  `PUERTO=8082` o `TIPO_LOTE_RETENCION_DIAS=0`, cámbielos a mano a `8769` y
+  `30` para usar Tipo junto a PlumA y limitar la conservación de lotes.
 
 ## [0.3.0-beta.2] — 2026-07-15
 

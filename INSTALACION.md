@@ -13,4 +13,4 @@ chmod +x instalar.sh detener.sh desinstalar.sh
 ./instalar.sh
 ```
 
-La URL local por defecto es `http://localhost:8082`.
+La URL local por defecto es `http://localhost:8769`.
