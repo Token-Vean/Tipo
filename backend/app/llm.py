@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import ipaddress
 import logging
+import math
 import os
 import re
 from typing import Any
@@ -242,23 +243,140 @@ async def verificar_modelo_local(nombre: str) -> None:
 # Llamadas al modelo
 # -----------------------------------------------------------------------------
 
+# -----------------------------------------------------------------------------
+# Presupuesto de la ventana de contexto
+# -----------------------------------------------------------------------------
+# Cuando el prompt supera num_ctx, Ollama no devuelve error: descarta el
+# PRINCIPIO del prompt y responde 200 OK. En Tipo el principio son las
+# instrucciones, las reglas ISBD y la lista de campos; sin ellas la propuesta
+# sale degradada o vacía. Con un num_ctx fijo de 32 768 y un PDF denso esto
+# podía pasar en silencio: el prompt sin documento ya ocupa ~10 000 tokens y
+# se reservan NUM_PREDICT para la respuesta.
+#
+# Sin el tokenizador del modelo, el presupuesto es una estimación por
+# caracteres (como en PlumA):
+#   1. Antes de llamar: si el texto de las zonas no cabe, el extractor envía
+#      su principio y su final con una marca de omisión explícita.
+#   2. num_ctx se ajusta al tamaño real en tramos fijos (pocos tramos, para
+#      que Ollama no recargue el modelo en cada petición) y nunca supera
+#      OLLAMA_NUM_CTX, que pasa a ser el máximo. Un documento pequeño usa
+#      menos memoria; uno grande ya no se trunca.
+#   3. Después de llamar: Ollama informa de prompt_eval_count y eval_count; si
+#      revelan truncado, el extractor lo avisa en la propuesta.
+
+
+def _float_env(nombre: str, defecto: float, minimo: float, maximo: float) -> float:
+    try:
+        valor = float(os.getenv(nombre, str(defecto)))
+    except ValueError:
+        return defecto
+    return max(minimo, min(maximo, valor))
+
+
+CARACTERES_POR_TOKEN = _float_env("TIPO_CARACTERES_POR_TOKEN", 3.5, 2.0, 6.0)
+TOKENS_POR_IMAGEN = max(64, int(os.getenv("TIPO_TOKENS_POR_IMAGEN", "600")))
+MARGEN_PLANTILLA_TOKENS = 512
+MIN_CARACTERES_DOCUMENTO = 2000
+TRAMOS_NUM_CTX = (16384, 24576, 32768, 49152, 65536, 98304, 131072)
+
+
+def tokens_necesarios(caracteres_prompt: int, imagenes: int = 0) -> int:
+    """Tokens estimados de prompt + imágenes + respuesta + margen."""
+    return (
+        math.ceil(max(0, caracteres_prompt) / CARACTERES_POR_TOKEN)
+        + max(0, imagenes) * TOKENS_POR_IMAGEN
+        + NUM_PREDICT
+        + MARGEN_PLANTILLA_TOKENS
+    )
+
+
+def num_ctx_para(caracteres_prompt: int, imagenes: int = 0) -> int:
+    """Menor tramo de num_ctx en el que cabe la petición, sin pasar de NUM_CTX."""
+    necesario = tokens_necesarios(caracteres_prompt, imagenes)
+    candidatos = [t for t in TRAMOS_NUM_CTX if t < NUM_CTX] + [NUM_CTX]
+    for tramo in candidatos:
+        if tramo >= necesario:
+            return tramo
+    return NUM_CTX
+
+
+def caracteres_documento_disponibles(caracteres_resto: int, imagenes: int = 0) -> int:
+    """Caracteres de documento que caben en NUM_CTX junto al resto del prompt
+    (`caracteres_resto`), las imágenes y la reserva para la respuesta."""
+    libres = NUM_CTX - tokens_necesarios(caracteres_resto, imagenes)
+    return max(MIN_CARACTERES_DOCUMENTO, int(libres * CARACTERES_POR_TOKEN))
+
+
+def evaluar_contexto(diagnostico: dict[str, Any] | None) -> str | None:
+    """Interpreta las métricas de Ollama de una llamada.
+
+    "prompt_truncado": el prompt no cabía y Ollama descartó su principio.
+    "contexto_agotado": prompt + respuesta superaron la ventana.
+    "limite_salida": la respuesta alcanzó num_predict y puede estar incompleta.
+    """
+    if not diagnostico:
+        return None
+
+    def _entero(valor: Any) -> int:
+        try:
+            return int(valor or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    num_ctx = _entero(diagnostico.get("num_ctx"))
+    num_predict = _entero(diagnostico.get("num_predict"))
+    prompt = _entero(diagnostico.get("prompt_eval_count"))
+    salida = _entero(diagnostico.get("eval_count"))
+    if num_ctx > 0 and prompt >= num_ctx:
+        return "prompt_truncado"
+    if num_ctx > 0 and prompt > 0 and prompt + salida > num_ctx:
+        return "contexto_agotado"
+    if diagnostico.get("done_reason") == "length":
+        if num_predict > 0 and salida >= num_predict:
+            return "limite_salida"
+        return "contexto_agotado"
+    return None
+
+
+def _es_error_de_formato(status_code: int, detalle: str) -> bool:
+    """¿El error de Ollama se debe a la salida estructurada (`format`)?
+
+    400 que mencionan format/schema/grammar: el esquema no se pudo convertir.
+    5xx con mensajes de gramática: el runtime no pudo aplicarla a este modelo.
+    En ambos casos se repite la llamada con `format: "json"` genérico.
+    """
+    d = (detalle or "").lower()
+    if status_code == 400:
+        return any(p in d for p in ("format", "schema", "grammar"))
+    if status_code >= 500:
+        return any(p in d for p in ("grammar", "schema", "llama_decode"))
+    return False
+
+
 async def generar(
     prompt: str,
     modelo: str,
     imagenes: list[bytes] | None = None,
-    formato_json: bool = True,
+    formato_json: bool | dict[str, Any] = True,
     temperatura: float = 0.1,
+    num_ctx: int | None = None,
+    diagnostico: dict[str, Any] | None = None,
 ) -> str:
     """
     Llama al modelo y devuelve la respuesta como cadena.
 
-    Si se pasan imágenes, se usa la ruta multimodal. Si formato_json=True se
-    fuerza JSON nativo de Ollama. La temperatura baja privilegia salidas
-    reproducibles frente a creatividad.
+    Si se pasan imágenes, se usa la ruta multimodal. `formato_json` puede ser
+    True (JSON genérico) o un esquema JSON: Ollama restringe entonces la
+    salida a esa estructura y desaparecen las respuestas con JSON inválido que
+    obligaban a repetir la inferencia. Si Ollama no acepta el esquema, se
+    repite una vez con JSON genérico. `num_ctx` permite ajustar la ventana al
+    tamaño de la petición (nunca por encima de NUM_CTX); si se pasa
+    `diagnostico`, se rellena con las métricas de la llamada.
     """
     await verificar_version_ollama()
     await verificar_modelo_local(modelo)
 
+    ventana = min(NUM_CTX, num_ctx) if num_ctx else NUM_CTX
     payload: dict[str, Any] = {
         "model": modelo,
         "prompt": prompt,
@@ -266,11 +384,13 @@ async def generar(
         "options": {
             "temperature": temperatura,
             "num_predict": NUM_PREDICT,
-            "num_ctx": NUM_CTX,
+            "num_ctx": ventana,
         },
     }
 
-    if formato_json:
+    if isinstance(formato_json, dict):
+        payload["format"] = formato_json
+    elif formato_json:
         payload["format"] = "json"
 
     if imagenes:
@@ -278,11 +398,37 @@ async def generar(
 
     async with cliente_local(TIMEOUT) as cliente:
         resp = await cliente.post(f"{OLLAMA_URL}/api/generate", json=payload)
+        if (
+            resp.status_code >= 400
+            and isinstance(formato_json, dict)
+            and _es_error_de_formato(resp.status_code, getattr(resp, "text", "") or "")
+        ):
+            logger.warning(
+                "Ollama no aceptó el esquema JSON de salida (HTTP %s); se repite con JSON genérico",
+                resp.status_code,
+            )
+            payload["format"] = "json"
+            resp = await cliente.post(f"{OLLAMA_URL}/api/generate", json=payload)
         resp.raise_for_status()
         data = resp.json()
         respuesta = data.get("response")
         if not isinstance(respuesta, str):
             raise RuntimeError("Ollama no devolvió una respuesta textual válida.")
+        if diagnostico is not None:
+            diagnostico.update(
+                num_ctx=ventana,
+                num_predict=NUM_PREDICT,
+                prompt_eval_count=data.get("prompt_eval_count"),
+                eval_count=data.get("eval_count"),
+                done_reason=data.get("done_reason"),
+                caracteres_prompt=len(prompt),
+                imagenes=len(imagenes or []),
+            )
+            logger.info(
+                "Ollama modelo=%s: prompt=%s tok, salida=%s tok, num_ctx=%s, imágenes=%d",
+                modelo, data.get("prompt_eval_count"), data.get("eval_count"), ventana,
+                len(imagenes or []),
+            )
         return respuesta
 
 

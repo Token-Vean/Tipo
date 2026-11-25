@@ -54,12 +54,22 @@ LONGITUD_MAXIMA_TEXTO = int(os.getenv("MAX_LONGITUD_TEXTO_EXTRAIDO", "800000"))
 UMBRAL_CALIDAD_OCR = float(os.getenv("UMBRAL_CALIDAD_OCR", "0.5"))
 
 # Imagen de entrada. 40 MP evita bombas razonables sin impedir escaneos
-# administrativos grandes. La dimensión máxima reduce cargas patológicas.
-DIMENSION_MAXIMA_IMAGEN = 6_000
+# administrativos grandes. Después se reduce a VISION_LADO_MAX (más abajo).
 PIXELS_MAXIMOS_IMAGEN = 40_000_000
 BYTES_MAXIMOS_IMAGEN_NORMALIZADA = 12 * 1024 * 1024
 
-# Render PDF. Se calculan píxeles estimados antes de renderizar.
+# Imágenes que se envían al modelo de visión. Se reducen a este lado mayor y
+# se codifican en JPEG: el modelo no aprovecha más resolución (redimensiona por
+# su cuenta) y PNG con optimize=True era lento y pesaba varias veces más en la
+# memoria del contenedor, en el JSON del sandbox y en la petición a Ollama.
+# 1600 px conservan legibles el ISBN, el depósito legal y el colofón.
+VISION_LADO_MAX = max(512, int(os.getenv("TIPO_VISION_LADO_MAX", "1600")))
+VISION_CALIDAD_JPEG = max(60, min(95, int(os.getenv("TIPO_VISION_CALIDAD_JPEG", "90"))))
+
+# Render PDF. Se calculan píxeles estimados antes de renderizar. La escala
+# efectiva se limita para que el lado mayor no pase de VISION_LADO_MAX: se
+# renderiza directamente al tamaño final en lugar de renderizar grande y
+# reducir después.
 ESCALA_RENDER_PDF = 2.0
 PIXELS_MAXIMOS_PAGINA_PDF = 35_000_000
 BYTES_MAXIMOS_IMAGEN_PDF = 12 * 1024 * 1024
@@ -324,9 +334,13 @@ def _calidad_ocr(texto: str, num_paginas: int) -> float:
 
 def _extraer_texto_pdf_por_pagina(contenido: bytes) -> list[str]:
     """
-    Extrae el texto de un PDF página a página. Devuelve una lista paralela al
-    índice de página; esto es lo que necesita la segmentación por zonas para
-    saber qué texto pertenece a preliminares y qué a finales.
+    Extrae el texto de las páginas de las zonas descriptivas de un PDF.
+
+    Devuelve una lista paralela al índice de página (lo que necesita la
+    segmentación por zonas), pero solo extrae el texto de las páginas
+    preliminares y finales: la selección es posicional, así que el resto del
+    libro no se usa y antes se extraía para nada (en un libro de 400 páginas,
+    unas 20 veces más trabajo del necesario). Las demás entradas quedan vacías.
     """
     import pypdf
 
@@ -347,14 +361,55 @@ def _extraer_texto_pdf_por_pagina(contenido: bytes) -> list[str]:
             f"{PAGINAS_MAXIMAS_PDF}. Divida el documento en piezas más pequeñas."
         )
 
-    paginas: list[str] = []
-    for pagina in lector.pages:
+    prelim, finales = zonas.indices_zonas(num_paginas)
+    paginas: list[str] = [""] * num_paginas
+    for indice in prelim + finales:
         try:
-            paginas.append(pagina.extract_text() or "")
+            paginas[indice] = lector.pages[indice].extract_text() or ""
         except Exception as e:
-            logger.warning("Error extrayendo texto de una página: %s", e)
-            paginas.append("")
+            logger.warning("Error extrayendo texto de la página %d: %s", indice + 1, e)
     return paginas
+
+
+def _codificar_para_vision(imagen) -> bytes:
+    """Reduce una imagen PIL al lado mayor VISION_LADO_MAX y la codifica en
+    JPEG (RGB o escala de grises). No modifica la imagen recibida."""
+    from PIL import Image
+
+    procesada = imagen
+    creada = None
+    try:
+        if procesada.mode not in ("RGB", "L"):
+            creada = procesada.convert("RGB")
+            procesada = creada
+        ancho, alto = procesada.size
+        lado = max(ancho, alto)
+        if lado > VISION_LADO_MAX:
+            factor = VISION_LADO_MAX / lado
+            reducida = procesada.resize(
+                (max(1, int(ancho * factor)), max(1, int(alto * factor))),
+                Image.Resampling.LANCZOS,
+            )
+            if creada is not None:
+                creada.close()
+            creada = reducida
+            procesada = reducida
+        buf = io.BytesIO()
+        procesada.save(buf, format="JPEG", quality=VISION_CALIDAD_JPEG)
+        return buf.getvalue()
+    finally:
+        if creada is not None:
+            try:
+                creada.close()
+            except Exception:
+                pass
+
+
+def _escala_render(ancho_pt: float, alto_pt: float) -> float:
+    lado = max(ancho_pt, alto_pt)
+    if lado <= 0:
+        return ESCALA_RENDER_PDF
+    return min(ESCALA_RENDER_PDF, VISION_LADO_MAX / lado)
 
 
 def _pdf_paginas_a_imagenes(contenido: bytes, indices: list[int]) -> list[bytes]:
@@ -384,27 +439,22 @@ def _pdf_paginas_a_imagenes(contenido: bytes, indices: list[int]) -> list[bytes]
             except Exception:
                 ancho_pt, alto_pt = (0, 0)
 
+            escala = _escala_render(ancho_pt, alto_pt)
             if ancho_pt and alto_pt:
-                pixeles_estimados = (
-                    int(ancho_pt * ESCALA_RENDER_PDF) * int(alto_pt * ESCALA_RENDER_PDF)
-                )
+                pixeles_estimados = int(ancho_pt * escala) * int(alto_pt * escala)
                 if pixeles_estimados > PIXELS_MAXIMOS_PAGINA_PDF:
                     raise ErrorValidacion(
                         f"La página {i + 1} del PDF es demasiado grande para renderizar "
                         f"({pixeles_estimados:,} píxeles estimados)."
                     )
 
-            bitmap = pagina.render(scale=ESCALA_RENDER_PDF).to_pil()
+            bitmap = pagina.render(scale=escala).to_pil()
             try:
                 if bitmap.width * bitmap.height > PIXELS_MAXIMOS_PAGINA_PDF:
                     raise ErrorValidacion(
                         f"La página {i + 1} del PDF supera el límite de píxeles renderizados."
                     )
-                if bitmap.mode not in ("RGB", "L"):
-                    bitmap = bitmap.convert("RGB")
-                buf = io.BytesIO()
-                bitmap.save(buf, format="PNG", optimize=True)
-                datos = buf.getvalue()
+                datos = _codificar_para_vision(bitmap)
             finally:
                 try:
                     bitmap.close()
@@ -446,7 +496,7 @@ def _extraer_texto_docx(contenido: bytes) -> str:
 
 
 def _validar_imagen(contenido: bytes) -> bytes:
-    from PIL import Image
+    from PIL import Image, ImageOps
 
     Image.MAX_IMAGE_PIXELS = PIXELS_MAXIMOS_IMAGEN
 
@@ -471,31 +521,15 @@ def _validar_imagen(contenido: bytes) -> bytes:
                     if img.format in {"TIFF", "WEBP"}:
                         raise ErrorValidacion("No se admiten imágenes multipágina o animadas.")
 
-                procesada = img
-                creada = None
+                # Se respeta la orientación EXIF de las fotos hechas con el
+                # móvil (al recodificar se pierde la etiqueta y la portada
+                # llegaba girada al modelo). El EXIF no se conserva.
+                orientada = ImageOps.exif_transpose(img)
                 try:
-                    if max(ancho, alto) > DIMENSION_MAXIMA_IMAGEN:
-                        factor = DIMENSION_MAXIMA_IMAGEN / max(ancho, alto)
-                        nuevo = (max(1, int(ancho * factor)), max(1, int(alto * factor)))
-                        creada = procesada.resize(nuevo, Image.Resampling.LANCZOS)
-                        procesada = creada
-
-                    if procesada.mode not in ("RGB", "L"):
-                        convertida = procesada.convert("RGB")
-                        if creada is not None:
-                            creada.close()
-                        creada = convertida
-                        procesada = convertida
-
-                    buf = io.BytesIO()
-                    procesada.save(buf, format="PNG", optimize=True)
-                    normalizada = buf.getvalue()
+                    normalizada = _codificar_para_vision(orientada)
                 finally:
-                    if creada is not None:
-                        try:
-                            creada.close()
-                        except Exception:
-                            pass
+                    if orientada is not img:
+                        orientada.close()
 
                 if len(normalizada) > BYTES_MAXIMOS_IMAGEN_NORMALIZADA:
                     raise ErrorValidacion("La imagen normalizada es demasiado grande para procesarse.")

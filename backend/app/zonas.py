@@ -109,26 +109,38 @@ class Zonificacion:
 # Segmentación de documentos paginados (PDF)
 # =============================================================================
 
-def segmentar_pdf(paginas_texto: list[str]) -> Zonificacion:
-    """
-    Asigna a zonas las páginas de un PDF a partir de su texto por página.
-
-    No interpreta el contenido: aplica la convención posicional (las primeras
-    páginas son preliminares, las últimas son finales). El modelo es quien
-    luego localiza el dato concreto dentro de esas zonas.
-    """
-    total = len(paginas_texto)
-    if total == 0:
-        return Zonificacion(paginas=[], paginas_totales=0)
-
+def indices_zonas(total: int) -> tuple[list[int], list[int]]:
+    """Índices (0-based) de las páginas preliminares y finales de un documento
+    de `total` páginas. La selección es posicional: no depende del texto, así
+    que el router puede calcularla antes de extraer nada y leer solo esas
+    páginas en lugar del libro entero."""
+    if total <= 0:
+        return [], []
     indices_prelim = list(range(min(PAGINAS_PRELIMINARES, total)))
-
     # Las últimas PAGINAS_FINALES páginas que no solapen con preliminares.
     # En libros muy cortos puede no haber zona final independiente.
     indices_final: list[int] = []
     if PAGINAS_FINALES > 0:
         inicio_final = max(len(indices_prelim), total - PAGINAS_FINALES)
         indices_final = list(range(inicio_final, total))
+    return indices_prelim, indices_final
+
+
+def segmentar_pdf(paginas_texto: list[str]) -> Zonificacion:
+    """
+    Asigna a zonas las páginas de un PDF a partir de su texto por página.
+
+    No interpreta el contenido: aplica la convención posicional (las primeras
+    páginas son preliminares, las últimas son finales). El modelo es quien
+    luego localiza el dato concreto dentro de esas zonas. `paginas_texto`
+    tiene una entrada por página del documento; las páginas fuera de las
+    zonas pueden llegar vacías (el router no las extrae).
+    """
+    total = len(paginas_texto)
+    if total == 0:
+        return Zonificacion(paginas=[], paginas_totales=0)
+
+    indices_prelim, indices_final = indices_zonas(total)
 
     paginas: list[PaginaZonificada] = []
     for i in indices_prelim:

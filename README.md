@@ -258,6 +258,8 @@ TIPO_LOTE_ZIP_MAX_DESCOMPRIMIDO=209715200
 TIPO_LOTE_ZIP_MAX_RATIO=100
 ```
 
+`OLLAMA_NUM_CTX` (32768 por defecto) es el máximo de la ventana de contexto: Tipo usa en cada documento el tramo más pequeño en el que cabe la petición y, si las zonas no caben, envía su principio y su final y lo indica en las advertencias de la propuesta.
+
 La lista desplegable de modelos muestra los modelos ya descargados en Ollama. La imagen Docker de Ollama está fijada por versión en `docker-compose.yml` (no se lee de `.env`). Para fijarla además por digest se usa `scripts/actualizar_ollama.sh <versión>` (o `.ps1`), que comprueba la versión de la imagen y rechaza las anteriores a 0.35.0. En Windows, el instalador resuelve automáticamente la imagen base `python:3.12-slim` a digest y la guarda en `.env` antes de construir la imagen, sin intervención del usuario final.
 
 ---

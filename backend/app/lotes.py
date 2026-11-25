@@ -36,6 +36,7 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 import uuid
 import zipfile
 from collections.abc import Iterator
@@ -105,12 +106,31 @@ _worker_lock = asyncio.Lock()
 # Esquema SQLite
 # =============================================================================
 
+# El esquema se prepara una vez por ruta de base de datos (y de nuevo si el
+# fichero desaparece), no en cada consulta: el worker de lotes consulta la
+# cola cada pocos segundos y el frontend sondea el progreso del lote.
+_esquemas_listos: set[str] = set()
+_esquemas_lock = threading.Lock()
+
+
 def _conexion() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH), timeout=10, isolation_level=None)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    ruta = Path(DB_PATH)
+    clave = str(ruta)
+    preparar = clave not in _esquemas_listos or not ruta.exists()
+    if preparar:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(clave, timeout=10, isolation_level=None)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        if preparar:
+            with _esquemas_lock:
+                conn.execute("PRAGMA journal_mode=WAL")
+                _ensure_schema(conn)
+                _esquemas_listos.add(clave)
+    except BaseException:
+        conn.close()
+        raise
     return conn
 
 
@@ -167,7 +187,6 @@ def _db() -> Iterator[sqlite3.Connection]:
     (el gestor de contexto de sqlite3.Connection no la cierra)."""
     conn = _conexion()
     try:
-        _ensure_schema(conn)
         with conn:
             yield conn
     finally:

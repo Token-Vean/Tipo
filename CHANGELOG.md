@@ -89,6 +89,48 @@ críticos y altos.
 - El desinstalador y el panel avisan de que se borran los usuarios, lotes,
   documentos y resultados.
 
+### Rendimiento
+
+Pensado para los equipos modestos del curso: menos memoria y menos espera por
+documento, sin cambiar lo que se propone.
+
+- **Solo se lee el texto de las páginas de zona del PDF.** La selección de
+  zonas es posicional (12 primeras y 6 últimas páginas), pero antes se
+  extraía el texto del libro entero; en un volumen de 400 páginas, unas 20
+  veces más trabajo del necesario.
+- **Ventana de contexto ajustada a cada petición** (`app/llm.py`). Con un
+  `num_ctx` fijo de 32768 y unas zonas densas, Ollama descartaba en silencio
+  el *principio* del prompt, es decir, las instrucciones. Ahora:
+  - `num_ctx` se elige por tramos (16384, 24576, 32768…) según el tamaño
+    estimado de la petición, y `OLLAMA_NUM_CTX` pasa a ser el máximo. Un
+    documento corriente usa 16384 o 24576: menos memoria de caché del modelo.
+    Pocos tramos, para que Ollama no recargue el modelo en cada documento; el
+    reintento usa el mismo tramo que el primer intento.
+  - Si las zonas no caben, se envía su principio (70 %) y su final (30 %) con
+    una marca de omisión explícita, y la propuesta lo advierte. Las evidencias
+    se siguen localizando en el texto completo.
+  - Tras la llamada se revisan `prompt_eval_count`, `eval_count` y
+    `done_reason`; si indican truncado o límite de salida, se avisa.
+  - Estimación ajustable con `TIPO_CARACTERES_POR_TOKEN` (3,5) y
+    `TIPO_TOKENS_POR_IMAGEN` (600).
+- **Salida estructurada con esquema JSON.** Se pasa a Ollama el esquema
+  exacto de la respuesta (todas las claves, confianza y catálogos de valores
+  como `enum`, sin claves adicionales). Desaparecen casi todos los JSON
+  inválidos que obligaban a repetir la inferencia. Si Ollama no acepta el
+  esquema, se repite una vez con `format: "json"`. La validación de la
+  respuesta no cambia.
+- **Imágenes más ligeras para el modelo.** Las páginas renderizadas y las
+  fotos se reducen a 1600 px de lado mayor (`TIPO_VISION_LADO_MAX`) y se
+  envían en JPEG (`TIPO_VISION_CALIDAD_JPEG`, 90) en lugar de PNG. Las fotos
+  hechas con el móvil respetan la orientación EXIF (antes la portada podía
+  llegar girada) y no conservan los metadatos EXIF.
+- **Menos trabajo SQLite por petición.** El esquema de la base de datos se
+  prepara una vez por fichero, no en cada consulta (el worker de lotes
+  consulta la cola cada pocos segundos). El rol y el estado de cada usuario
+  se guardan 5 segundos en memoria (`TIPO_USUARIO_CACHE_SEGUNDOS`); desactivar,
+  borrar o cambiar la contraseña de un usuario desde Tipo invalida la caché
+  al momento, y el plazo solo acota los cambios hechos con `tipo-auth`.
+
 ### Corregido
 
 - Las subidas de lotes se escribían en `/tmp`, un tmpfs de 512 MB en RAM que

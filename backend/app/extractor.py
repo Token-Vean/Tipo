@@ -22,7 +22,7 @@ import logging
 import os
 import re
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -790,14 +790,131 @@ _REINTENTO_SUFIJO = (
 )
 
 
-async def _llamar_modelo(prompt: str, modelo: str, entrada: Entrada) -> str:
+_MARCA_OMISION = (
+    "\n\n[… {omitidos} caracteres del centro de las zonas omitidos por el límite "
+    "de contexto del modelo …]\n\n"
+)
+
+
+def ajustar_documento_a_contexto(documento: str, max_caracteres: int) -> tuple[str, int]:
+    """Recorta `documento` a `max_caracteres` conservando el principio (70 %)
+    y el final (30 %) con una marca explícita de omisión.
+
+    En Tipo el principio son la portada y los preliminares, y el final el
+    colofón: lo que más datos aporta. Si se deja a Ollama, descarta el
+    principio del PROMPT completo (las instrucciones), que es peor.
+    Devuelve (texto, caracteres_omitidos). Corta en saltos de línea cuando
+    puede, para no partir palabras ni cabeceras de zona.
+    """
+    if len(documento) <= max_caracteres:
+        return documento, 0
+    marca_max = len(_MARCA_OMISION.format(omitidos=len(documento)))
+    util = max(0, max_caracteres - marca_max)
+    cabeza_n = int(util * 0.7)
+    cola_n = util - cabeza_n
+    cabeza = documento[:cabeza_n]
+    corte = cabeza.rfind("\n")
+    if corte > cabeza_n * 0.8:
+        cabeza = cabeza[:corte]
+    cola = documento[len(documento) - cola_n:] if cola_n else ""
+    corte = cola.find("\n")
+    if 0 <= corte < cola_n * 0.2:
+        cola = cola[corte + 1:]
+    omitidos = len(documento) - len(cabeza) - len(cola)
+    return cabeza + _MARCA_OMISION.format(omitidos=omitidos) + cola, omitidos
+
+
+def esquema_json_respuesta(extraibles: list[ElementoEsquema]) -> dict[str, Any]:
+    """Esquema JSON de la respuesta para `format` de Ollama.
+
+    Con él, Ollama restringe la generación a esta estructura exacta: todas las
+    claves presentes, sin claves inventadas, confianza dentro de su catálogo y,
+    en campos de lista con catálogo, solo valores admitidos. Desaparecen así
+    casi todos los JSON inválidos que obligaban a repetir la inferencia.
+    parsear_respuesta sigue validando igual: el esquema reduce errores, no
+    sustituye a la validación.
+    """
+    def _valor(el: ElementoEsquema) -> dict[str, Any]:
+        cadena: dict[str, Any] = {"type": "string"}
+        if el.tipo == "lista" and el.valores:
+            cadena = {"type": "string", "enum": list(el.valores)}
+        if el.multiple:
+            return {"anyOf": [{"type": "array", "items": cadena}, {"type": "null"}]}
+        return {"anyOf": [cadena, {"type": "null"}]}
+
+    nulo_o_texto = {"anyOf": [{"type": "string"}, {"type": "null"}]}
+    propiedades = {
+        el.clave: {
+            "type": "object",
+            "properties": {
+                "valor": _valor(el),
+                "confianza": {
+                    "anyOf": [
+                        {"type": "string", "enum": ["alta", "media", "baja"]},
+                        {"type": "null"},
+                    ]
+                },
+                "evidencia": nulo_o_texto,
+                "zona": nulo_o_texto,
+            },
+            "required": ["valor", "confianza", "evidencia", "zona"],
+            "additionalProperties": False,
+        }
+        for el in extraibles
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "campos": {
+                "type": "object",
+                "properties": propiedades,
+                "required": list(propiedades),
+                "additionalProperties": False,
+            }
+        },
+        "required": ["campos"],
+        "additionalProperties": False,
+    }
+
+
+async def _llamar_modelo(
+    prompt: str,
+    modelo: str,
+    entrada: Entrada,
+    esquema_salida: dict[str, Any] | None = None,
+    num_ctx: int | None = None,
+    diagnostico: dict[str, Any] | None = None,
+) -> str:
     return await llm.generar(
         prompt=prompt,
         modelo=modelo,
         imagenes=entrada.imagenes,
-        formato_json=True,
+        formato_json=esquema_salida if esquema_salida else True,
         temperatura=0.0,
+        num_ctx=num_ctx,
+        diagnostico=diagnostico,
     )
+
+
+def _advertencia_contexto(diagnostico: dict[str, Any]) -> str | None:
+    estado = llm.evaluar_contexto(diagnostico)
+    if estado == "prompt_truncado":
+        return (
+            "El texto enviado no cupo en la ventana de contexto del modelo y Ollama "
+            "descartó parte de las instrucciones: revise la propuesta con especial "
+            "cuidado o suba OLLAMA_NUM_CTX si el equipo tiene memoria."
+        )
+    if estado == "contexto_agotado":
+        return (
+            "La respuesta del modelo llegó al final de la ventana de contexto y puede "
+            "estar incompleta."
+        )
+    if estado == "limite_salida":
+        return (
+            "La respuesta del modelo alcanzó el límite de salida (OLLAMA_NUM_PREDICT) "
+            "y puede estar incompleta."
+        )
+    return None
 
 
 async def extraer(
@@ -808,16 +925,46 @@ async def extraer(
     idioma_salida: str = "es",
 ) -> Propuesta:
     ejemplos = cargar_ejemplos()
+    extraibles = esquema.extraibles(filtro_claves)
+    n_imagenes = len(entrada.imagenes or [])
+    advertencias_extra: list[str] = []
+
+    # Presupuesto de contexto. El texto completo se conserva en `entrada` para
+    # localizar_spans; al modelo se le envía, si no cabe, una copia recortada.
+    entrada_modelo = entrada
     prompt = construir_prompt(esquema, entrada, filtro_claves, idioma_salida, ejemplos)
-    n_campos = len(esquema.extraibles(filtro_claves))
+    if entrada.texto:
+        caracteres_doc = len(neutralizar_delimitadores(entrada.texto))
+        caracteres_resto = len(prompt) - caracteres_doc + len(_REINTENTO_SUFIJO)
+        disponibles = llm.caracteres_documento_disponibles(caracteres_resto, n_imagenes)
+        if caracteres_doc > disponibles:
+            texto_recortado, omitidos = ajustar_documento_a_contexto(
+                entrada.texto, disponibles
+            )
+            entrada_modelo = replace(entrada, texto=texto_recortado)
+            prompt = construir_prompt(
+                esquema, entrada_modelo, filtro_claves, idioma_salida, ejemplos
+            )
+            advertencias_extra.append(
+                f"Las zonas del documento superaban la ventana de contexto del modelo: "
+                f"se omitieron {omitidos} caracteres de su parte central (se conservan "
+                f"el principio y el final). Revise los campos de las páginas omitidas."
+            )
+    # El tramo se calcula con el sufijo de reintento incluido, para que los dos
+    # intentos usen el mismo num_ctx y Ollama no recargue el modelo entre ellos.
+    num_ctx = llm.num_ctx_para(len(prompt) + len(_REINTENTO_SUFIJO), n_imagenes)
+    esquema_salida = esquema_json_respuesta(extraibles)
+    diagnostico: dict[str, Any] = {}
+
     logger.info(
-        "Llamando al modelo %s para %s (%d campos, %d ejemplos few-shot)",
-        modelo, esquema.norma, n_campos, len(ejemplos),
+        "Llamando al modelo %s para %s (%d campos, %d ejemplos few-shot, num_ctx=%d)",
+        modelo, esquema.norma, len(extraibles), len(ejemplos), num_ctx,
     )
 
-    advertencias_extra: list[str] = []
     try:
-        respuesta = await _llamar_modelo(prompt, modelo, entrada)
+        respuesta = await _llamar_modelo(
+            prompt, modelo, entrada_modelo, esquema_salida, num_ctx, diagnostico
+        )
     except Exception as e:
         logger.exception("Fallo en la llamada al modelo")
         return Propuesta(
@@ -826,7 +973,7 @@ async def extraer(
             modelo=modelo,
             timestamp=dt.datetime.now().isoformat(timespec="seconds"),
             idioma_salida=idioma_salida,
-            advertencias=[f"El modelo no respondió: {e}"],
+            advertencias=advertencias_extra + [f"El modelo no respondió: {e}"],
         )
 
     # Reintento único si la respuesta no contiene un JSON aprovechable.
@@ -841,12 +988,20 @@ async def extraer(
     if not json_ok or truncado:
         logger.info("Respuesta no válida o truncada; reintentando una vez")
         try:
-            respuesta = await _llamar_modelo(prompt + _REINTENTO_SUFIJO, modelo, entrada)
+            diagnostico = {}
+            respuesta = await _llamar_modelo(
+                prompt + _REINTENTO_SUFIJO, modelo, entrada_modelo, esquema_salida,
+                num_ctx, diagnostico,
+            )
             advertencias_extra.append(
                 "La primera respuesta del modelo no fue un JSON válido; se reintentó."
             )
         except Exception as e:
             logger.warning("El reintento también falló: %s", e)
+
+    aviso_contexto = _advertencia_contexto(diagnostico)
+    if aviso_contexto:
+        advertencias_extra.append(aviso_contexto)
 
     propuestos, advertencias = parsear_respuesta(respuesta, esquema, filtro_claves)
     advertencias = advertencias_extra + advertencias
