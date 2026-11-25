@@ -98,32 +98,40 @@ if not errorlevel 1 set "OLLAMA_EXE=ollama"
 if not defined OLLAMA_EXE if exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" set "OLLAMA_EXE=%LOCALAPPDATA%\Programs\Ollama\ollama.exe"
 if not defined OLLAMA_EXE if exist "%ProgramFiles%\Ollama\ollama.exe" set "OLLAMA_EXE=%ProgramFiles%\Ollama\ollama.exe"
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri 'http://127.0.0.1:11434/api/tags' -UseBasicParsing -TimeoutSec 3; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
-if not errorlevel 1 (
-    echo    Ollama instalado y arrancado ^(127.0.0.1:11434^). Comprobando su version...
-    REM Solo se reutiliza un Ollama de version segura: 0.35.0 o posterior.
-    REM Si es antiguo se pide actualizarlo: no se cambia a Docker, porque el
-    REM Ollama antiguo seguiria funcionando y vulnerable en el equipo.
-    powershell -NoProfile -ExecutionPolicy Bypass -File "tools\windows\comprobar-ollama.ps1"
-    if errorlevel 1 (
-        echo.
-        pause
-        exit /b 1
-    )
-    set PERFIL=external
-    set APP_SERVICE=app-external
-    echo        Tipo usara tu instalacion local de Ollama y sus modelos.
-    echo        Recomendado: variable de entorno OLLAMA_NO_CLOUD=1 en tu cuenta de
-    echo        Windows para que Ollama solo use modelos locales.
-) else if defined OLLAMA_EXE (
+REM Una sola comprobacion, la misma que usa el panel (tools\windows\ollama-equipo.ps1):
+REM 127.0.0.1 sin proxy del sistema y, si no responde, se pregunta al programa
+REM de Ollama. Solo se reutiliza un Ollama de version segura (0.35.0 o
+REM posterior). Si es antiguo se pide actualizarlo: no se cambia a Docker,
+REM porque el Ollama antiguo seguiria funcionando y vulnerable en el equipo.
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\windows\comprobar-ollama.ps1"
+set "OLLAMA_ESTADO=!errorlevel!"
+if "!OLLAMA_ESTADO!"=="0" goto ollama_equipo
+if "!OLLAMA_ESTADO!"=="2" goto ollama_docker
+echo.
+pause
+exit /b 1
+
+:ollama_equipo
+set PERFIL=external
+set APP_SERVICE=app-external
+echo        Tipo usara tu instalacion local de Ollama y sus modelos.
+echo        Recomendado: variable de entorno OLLAMA_NO_CLOUD=1 en tu cuenta de
+echo        Windows para que Ollama solo use modelos locales.
+goto ollama_fin
+
+:ollama_docker
+if defined OLLAMA_EXE (
     echo    AVISO - Ollama parece instalado, pero no esta arrancado en 127.0.0.1:11434.
-    echo            Tipo continuara usando Ollama dentro de Docker.
-    echo            No tienes que hacer nada para completar la instalacion.
+    echo            Si quieres usar tu Ollama y sus modelos, arrancalo y vuelve a
+    echo            ejecutar este instalador. Si no, Tipo usara Ollama dentro de
+    echo            Docker y descargara el modelo ^(3-5 GB^).
 ) else (
     echo    AVISO - No se ha detectado Ollama instalado/arrancado en el equipo.
     echo            Tipo continuara usando Ollama dentro de Docker.
     echo            No tienes que instalar Ollama manualmente para usar esta release.
 )
+
+:ollama_fin
 
 REM -----------------------------------------------------------------------------
 REM 4. Puerto configurado
@@ -340,7 +348,7 @@ set INTENTO=0
 set /a INTENTO+=1
 REM Solo cuenta como listo si quien responde es Tipo: asi nunca se abre en el
 REM navegador otra aplicacion que estuviera en el mismo puerto.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri 'http://!TIPO_LOCAL_HOST!:!PUERTO!/api/estado' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200 -and (($r.Content | ConvertFrom-Json).aplicacion -eq 'Tipo')) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command ". '.\tools\windows\ollama-equipo.ps1'; try { $c = Invoke-HttpLocalGet -Url 'http://127.0.0.1:!PUERTO!/api/estado' -TimeoutMs 3000; if (($c | ConvertFrom-Json).aplicacion -eq 'Tipo') { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
 if not errorlevel 1 goto wait_ok
 
 "!DOCKER!" ps --filter "name=tipo-app" --filter "status=exited" --format "{{.Names}}" | findstr "tipo-app" >nul 2>&1

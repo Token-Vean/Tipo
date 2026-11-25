@@ -160,6 +160,20 @@ documento, sin cambiar lo que se propone.
 
 ### Corregido
 
+- **El panel y el instalador de Windows daban por «no arrancado» un Ollama en
+  marcha.** Comprobaban con `Invoke-WebRequest` contra `localhost:11434` y 2-3
+  segundos de espera: con el proxy del sistema (la detección automática WPAD
+  o un script PAC puede consumir por sí sola esos segundos) o con `localhost`
+  resuelto a `::1`, la comprobación fallaba, y el instalador pasaba en
+  silencio a Ollama en Docker y descargaba de nuevo el modelo. Ahora los dos
+  usan la misma detección (`tools/windows/ollama-equipo.ps1`): `127.0.0.1`,
+  sin proxy, 5 segundos y, si no responde, `ollama --version`. Si el programa
+  de Ollama dice que está arrancado pero no responde en `127.0.0.1:11434`, el
+  instalador se detiene y explica el motivo (incluida una `OLLAMA_HOST`
+  distinta) en lugar de descargar el modelo otra vez; el panel muestra el
+  error en su registro. El panel y la espera final del instalador comprueban
+  también Tipo en `127.0.0.1` y sin proxy.
+
 - Las subidas de lotes se escribían en `/tmp`, un tmpfs de 512 MB en RAM que
   cuenta contra el límite de memoria del contenedor: un lote de más de unos
   500 MB fallaba y uno menor podía llevar el contenedor al límite de memoria.

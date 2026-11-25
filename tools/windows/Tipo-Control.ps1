@@ -91,13 +91,6 @@ function Get-DockerExe {
     return Get-CommandPathSafe "docker.exe" $fallbacks
 }
 
-function Get-OllamaExe {
-    $fallbacks = @()
-    if ($Env:LOCALAPPDATA) { $fallbacks += (Join-Path $Env:LOCALAPPDATA "Programs\Ollama\ollama.exe") }
-    if ($Env:ProgramFiles) { $fallbacks += (Join-Path $Env:ProgramFiles "Ollama\ollama.exe") }
-    return Get-CommandPathSafe "ollama.exe" $fallbacks
-}
-
 function Invoke-ExecutableOk {
     param(
         [Parameter(Mandatory=$true)][string]$Exe,
@@ -144,32 +137,14 @@ function Test-DockerCompose {
     return Invoke-ExecutableOk -Exe $docker -Args @("compose", "version")
 }
 
-function Test-OllamaInstalled {
-    return [bool](Get-OllamaExe)
-}
-
 # Debe coincidir con VERSION_MINIMA_OLLAMA de backend\app\llm.py: todas las
 # versiones anteriores a 0.35.0 están afectadas por CVE-2026-103663.
 $script:OllamaMinVersion = [version]'0.35.0'
 
-# Versión del Ollama del equipo como [version], o $null si no se puede leer.
-function Get-OllamaVersion {
-    try {
-        $r = Invoke-WebRequest -Uri "http://127.0.0.1:11434/api/version" -UseBasicParsing -TimeoutSec 2
-        $texto = ($r.Content | ConvertFrom-Json).version
-        if ($texto -match '^\s*v?(\d+)\.(\d+)\.(\d+)') {
-            return [version]("{0}.{1}.{2}" -f $Matches[1], $Matches[2], $Matches[3])
-        }
-    } catch {}
-    return $null
-}
-
-function Test-OllamaNative {
-    try {
-        $response = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2
-        return ($response.StatusCode -eq 200)
-    } catch { return $false }
-}
+# Misma detección que el instalador (comprobar-ollama.ps1): 127.0.0.1 sin
+# proxy del sistema y, si no responde, el propio programa de Ollama.
+. (Join-Path $ScriptDir "ollama-equipo.ps1")
+$script:UltimoEstadoOllama = $null
 
 function Invoke-ConsoleScript {
     param(
@@ -355,12 +330,27 @@ function Show-PrerequisitesHelp {
            "   Si esta instalado y arrancado, Tipo lo reutiliza con sus modelos, pero solo`n" +
            "   si es la version $($script:OllamaMinVersion) o posterior (aviso de seguridad`n" +
            "   CVE-2026-103663). Si es anterior, actualizalo desde https://ollama.com/download`n`n"
-    $v = Get-OllamaVersion
-    if ($null -ne $v) {
-        if ($v -lt $script:OllamaMinVersion) {
-            $msg += "Tu Ollama es la version $($v): ACTUALIZALO antes de instalar Tipo.`n`n"
-        } else {
-            $msg += "Tu Ollama es la version $($v): valida.`n`n"
+    $o = Get-OllamaEquipo
+    switch ($o.Estado) {
+        "arrancado" {
+            if ($null -eq $o.Version) {
+                $msg += "Tu Ollama responde, pero no informa de su version: compruebala con 'ollama --version'.`n`n"
+            } elseif ($o.Version -lt $script:OllamaMinVersion) {
+                $msg += "Tu Ollama es la version $($o.Version): ACTUALIZALO antes de instalar Tipo.`n`n"
+            } else {
+                $msg += "Tu Ollama es la version $($o.Version), arrancado: Tipo lo usara con tus modelos.`n`n"
+            }
+        }
+        "no_responde" {
+            $msg += "Tu Ollama $($o.Version) esta arrancado, pero no responde en 127.0.0.1:11434.`n"
+            $msg += "Detalle: $($o.Error)`n"
+            if ($o.Host) { $msg += "La variable OLLAMA_HOST vale '$($o.Host)': quitala o ponle 127.0.0.1:11434 (nunca 0.0.0.0) y reinicia Ollama.`n" }
+            $msg += "`n"
+        }
+        "no_arrancado" {
+            $msg += "Tu Ollama esta instalado pero no responde en 127.0.0.1:11434.`n"
+            $msg += "Si quieres usarlo con tus modelos, arrancalo antes de instalar.`n"
+            $msg += "Detalle: $($o.Error)`n`n"
         }
     }
     $msg += "Tras instalar Docker, abre Docker Desktop y vuelve a ejecutar este panel."
@@ -384,24 +374,42 @@ function Update-Status {
         $dockerLabel.ForeColor = [System.Drawing.Color]::DarkRed
     }
 
-    if (Test-OllamaNative) {
-        $ollamaVersion = Get-OllamaVersion
-        if ($null -eq $ollamaVersion) {
-            $ollamaLabel.Text = "Ollama: version desconocida"
-            $ollamaLabel.ForeColor = [System.Drawing.Color]::DarkOrange
-        } elseif ($ollamaVersion -lt $script:OllamaMinVersion) {
-            $ollamaLabel.Text = "Ollama $($ollamaVersion): actualizalo"
-            $ollamaLabel.ForeColor = [System.Drawing.Color]::DarkRed
-        } else {
-            $ollamaLabel.Text = "Ollama $($ollamaVersion): arrancado"
-            $ollamaLabel.ForeColor = [System.Drawing.Color]::DarkGreen
+    $o = Get-OllamaEquipo
+    switch ($o.Estado) {
+        "arrancado" {
+            if ($null -eq $o.Version) {
+                $ollamaLabel.Text = "Ollama: version desconocida"
+                $ollamaLabel.ForeColor = [System.Drawing.Color]::DarkOrange
+            } elseif ($o.Version -lt $script:OllamaMinVersion) {
+                $ollamaLabel.Text = "Ollama $($o.Version): actualizalo"
+                $ollamaLabel.ForeColor = [System.Drawing.Color]::DarkRed
+            } else {
+                $ollamaLabel.Text = "Ollama $($o.Version): arrancado"
+                $ollamaLabel.ForeColor = [System.Drawing.Color]::DarkGreen
+            }
         }
-    } elseif (Test-OllamaInstalled) {
-        $ollamaLabel.Text = "Ollama: instalado, no arrancado"
-        $ollamaLabel.ForeColor = [System.Drawing.Color]::DarkOrange
-    } else {
-        $ollamaLabel.Text = "Ollama: no instalado; se usara Docker"
-        $ollamaLabel.ForeColor = [System.Drawing.Color]::DimGray
+        "no_responde" {
+            $ollamaLabel.Text = "Ollama $($o.Version): no responde en 127.0.0.1"
+            $ollamaLabel.ForeColor = [System.Drawing.Color]::DarkRed
+        }
+        "no_arrancado" {
+            $ollamaLabel.Text = "Ollama: instalado, no arrancado"
+            $ollamaLabel.ForeColor = [System.Drawing.Color]::DarkOrange
+        }
+        default {
+            $ollamaLabel.Text = "Ollama: no instalado; se usara Docker"
+            $ollamaLabel.ForeColor = [System.Drawing.Color]::DimGray
+        }
+    }
+    # El detalle del fallo va al registro del panel solo cuando cambia el
+    # estado, no en cada refresco.
+    $clave = "$($o.Estado)|$($o.Version)"
+    if ($clave -ne $script:UltimoEstadoOllama) {
+        $script:UltimoEstadoOllama = $clave
+        if ($o.Estado -in @("no_responde", "no_arrancado") -and $o.Error) {
+            Write-OutputBox "Ollama no responde en 127.0.0.1:11434: $($o.Error)"
+        }
+        if ($o.Host) { Write-OutputBox "Variable OLLAMA_HOST: $($o.Host)" }
     }
 
     if (Test-DockerCompose) {
@@ -412,18 +420,18 @@ function Update-Status {
         $composeLabel.ForeColor = [System.Drawing.Color]::DarkRed
     }
 
+    # 127.0.0.1 (Docker publica Tipo solo ahi) y sin proxy del sistema, como
+    # la deteccion de Ollama: con "localhost" y el proxy, el panel podia dar
+    # Tipo por detenido estando en marcha.
     try {
-        $response = Invoke-WebRequest -Uri "$url/api/estado" -UseBasicParsing -TimeoutSec 2
+        $contenido = Invoke-HttpLocalGet -Url "http://127.0.0.1:$port/api/estado" -TimeoutMs 3000
         $esTipo = $false
-        try { $esTipo = (($response.Content | ConvertFrom-Json).aplicacion -eq "Tipo") } catch {}
-        if ($response.StatusCode -eq 200 -and $esTipo) {
+        try { $esTipo = (($contenido | ConvertFrom-Json).aplicacion -eq "Tipo") } catch {}
+        if ($esTipo) {
             $appLabel.Text = "Tipo: en ejecucion ($url)"
             $appLabel.ForeColor = [System.Drawing.Color]::DarkGreen
-        } elseif ($response.StatusCode -eq 200) {
-            $appLabel.Text = "Tipo: el puerto $port lo usa otra aplicacion"
-            $appLabel.ForeColor = [System.Drawing.Color]::DarkOrange
         } else {
-            $appLabel.Text = "Tipo: respuesta inesperada ($($response.StatusCode))"
+            $appLabel.Text = "Tipo: el puerto $port lo usa otra aplicacion"
             $appLabel.ForeColor = [System.Drawing.Color]::DarkOrange
         }
     } catch {

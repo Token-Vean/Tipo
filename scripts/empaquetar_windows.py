@@ -77,6 +77,7 @@ OBLIGATORIOS = {
     "LICENSE",
     PANEL,
     "tools/windows/comprobar-ollama.ps1",
+    "tools/windows/ollama-equipo.ps1",
     "tools/windows/validar-env.ps1",
     LANZADOR,
     PREFIJO_AYUDA + "LEEME.txt",
