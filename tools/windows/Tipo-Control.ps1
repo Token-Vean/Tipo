@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # Tipo - panel grafico de instalacion/control para Windows
 # =============================================================================
 $ErrorActionPreference = "Stop"
@@ -11,13 +11,32 @@ $Root = Resolve-Path (Join-Path $ScriptDir "..\..")
 Set-Location $Root
 
 function Get-Port {
-    $port = "8082"
+    # 8769 es el puerto de Tipo desde 0.3.0 (8082 es el de PlumA: con ese
+    # valor por defecto el panel podia dar por arrancado Tipo cuando quien
+    # respondia era PlumA). Un valor no numerico en .env se ignora.
+    $port = "8769"
     $envFile = Join-Path $Root ".env"
     if (Test-Path $envFile) {
         $line = Get-Content $envFile -ErrorAction SilentlyContinue | Where-Object { $_ -match '^PUERTO=' } | Select-Object -First 1
-        if ($line) { $port = ($line -replace '^PUERTO=', '').Trim() }
+        if ($line) {
+            $valor = ($line -replace '^PUERTO=', '').Trim()
+            if ($valor -match '^[0-9]{2,5}$') { $port = $valor }
+        }
     }
     return $port
+}
+
+function Test-EnvValido {
+    # Misma validacion que instalar.bat (tools\windows\validar-env.ps1).
+    $validador = Join-Path $Root "tools\windows\validar-env.ps1"
+    if (-not (Test-Path $validador)) { return $true }
+    $salida = & powershell -NoProfile -ExecutionPolicy Bypass -File $validador -Ruta (Join-Path $Root ".env") | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        Write-OutputBox $salida.Trim()
+        [System.Windows.Forms.MessageBox]::Show($salida.Trim(), "Tipo - configuración no válida", "OK", "Error") | Out-Null
+        return $false
+    }
+    return $true
 }
 
 function Get-ProfileName {
@@ -151,7 +170,14 @@ function Invoke-ConsoleScript {
 }
 
 function Invoke-Capture {
-    param([Parameter(Mandatory=$true)][string]$Command)
+    # Ejecuta una orden y vuelca su salida en el panel. Devuelve el codigo de
+    # salida (-1 si no se pudo lanzar). $ExtraEnv pasa variables solo a ese
+    # proceso, sin escribirlas en disco (se usa para la contrasena de
+    # recuperacion).
+    param(
+        [Parameter(Mandatory=$true)][string]$Command,
+        [hashtable]$ExtraEnv = @{}
+    )
     try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = "cmd.exe"
@@ -162,15 +188,22 @@ function Invoke-Capture {
         $psi.UseShellExecute = $false
         $psi.CreateNoWindow = $true
         $psi.Environment["COMPOSE_PROFILES"] = Get-ProfileName
+        foreach ($clave in $ExtraEnv.Keys) { $psi.Environment[$clave] = [string]$ExtraEnv[$clave] }
         $p = [System.Diagnostics.Process]::Start($psi)
+        # stderr se lee en paralelo: docker compose build escribe mucho por
+        # stderr y, leyendo primero stdout hasta el final, el proceso podia
+        # quedarse bloqueado con el bufer de stderr lleno (panel colgado).
+        $errTask = $p.StandardError.ReadToEndAsync()
         $stdout = $p.StandardOutput.ReadToEnd()
-        $stderr = $p.StandardError.ReadToEnd()
         $p.WaitForExit()
+        $stderr = $errTask.Result
         if ($stdout.Trim()) { Write-OutputBox $stdout.Trim() }
         if ($stderr.Trim()) { Write-OutputBox $stderr.Trim() }
         Write-OutputBox "Codigo de salida: $($p.ExitCode)"
+        return $p.ExitCode
     } catch {
         Write-OutputBox "ERROR: $($_.Exception.Message)"
+        return -1
     }
 }
 
@@ -179,8 +212,9 @@ function Repair-DataPermissions {
         [System.Windows.Forms.MessageBox]::Show("Docker Desktop debe estar instalado y arrancado para reparar permisos.", "Tipo", "OK", "Warning") | Out-Null
         return
     }
+    if (-not (Test-EnvValido)) { return }
     Write-OutputBox "Reparando permisos del volumen local de usuarios..."
-    Invoke-Capture "docker compose --profile tools run --rm fix-permissions"
+    $null = Invoke-Capture "docker compose --profile tools run --rm fix-permissions"
     Write-OutputBox "Reparacion de permisos finalizada. Si Tipo estaba abierto, reinicialo."
 }
 
@@ -258,6 +292,14 @@ function Show-ResetAdminDialog {
         [System.Windows.Forms.MessageBox]::Show("Debe indicar usuario y contraseña.", "Tipo", "OK", "Warning") | Out-Null
         return
     }
+    # Mismo patron que el backend (auth.USERNAME_RE). Ademas de rechazar
+    # nombres que Tipo no admitiria, impide que comillas, & o | lleguen a la
+    # linea de cmd.exe donde se monta la orden.
+    if ($username -cnotmatch '^[a-zA-Z0-9._@-]{3,64}$') {
+        [System.Windows.Forms.MessageBox]::Show("El usuario debe tener entre 3 y 64 caracteres: letras sin tildes, números, punto, guion, guion bajo o @.", "Tipo", "OK", "Warning") | Out-Null
+        return
+    }
+    if (-not (Test-EnvValido)) { return }
 
     $confirm = [System.Windows.Forms.MessageBox]::Show(
         "Se restablecerá el acceso administrador local. Las sesiones de ese usuario se invalidarán al reiniciar la aplicación. ¿Continuar?",
@@ -269,16 +311,23 @@ function Show-ResetAdminDialog {
 
     $profile = Get-ProfileName
     $service = Get-AppServiceName
-    $tmpEnv = Join-Path ([System.IO.Path]::GetTempPath()) ("tipo-recovery-" + [System.Guid]::NewGuid().ToString("N") + ".env")
-    try {
-        "TIPO_RECOVERY_PASSWORD=$password" | Set-Content -Encoding UTF8 $tmpEnv
-        Write-OutputBox "Preparando recuperación de acceso con perfil '$profile'..."
-        Invoke-Capture "set COMPOSE_PROFILES=$profile && docker compose build $service"
-        Invoke-Capture "docker compose --profile tools run --rm fix-permissions"
-        Invoke-Capture "set COMPOSE_PROFILES=$profile && docker compose run --rm --no-deps --env-file `"$tmpEnv`" $service python -m app.auth_cli reset-admin --username `"$username`" --password-env TIPO_RECOVERY_PASSWORD"
+    # La contrasena viaja solo en el entorno del proceso docker compose y se
+    # reenvia al contenedor con "-e TIPO_RECOVERY_PASSWORD" (sin valor: Compose
+    # lo toma de su propio entorno). Antes se escribia en un .env temporal y se
+    # pasaba con --env-file, que en Compose solo sirve para interpolar el
+    # fichero de Compose: la variable no llegaba al contenedor y auth_cli
+    # acababa pidiendo la contrasena por un terminal que no existe.
+    Write-OutputBox "Preparando recuperación de acceso con perfil '$profile'..."
+    $codigo = Invoke-Capture "docker compose build $service"
+    if ($codigo -eq 0) { $codigo = Invoke-Capture "docker compose --profile tools run --rm fix-permissions" }
+    if ($codigo -eq 0) {
+        $codigo = Invoke-Capture "docker compose run --rm --no-deps -T -e TIPO_RECOVERY_PASSWORD $service python -m app.auth_cli reset-admin --username $username --password-env TIPO_RECOVERY_PASSWORD" -ExtraEnv @{ "TIPO_RECOVERY_PASSWORD" = $password }
+    }
+    $password = $null
+    if ($codigo -eq 0) {
         [System.Windows.Forms.MessageBox]::Show("Acceso administrador restablecido. Reinicia Tipo e inicia sesión con la nueva contraseña.", "Tipo", "OK", "Information") | Out-Null
-    } finally {
-        if (Test-Path $tmpEnv) { Remove-Item $tmpEnv -Force -ErrorAction SilentlyContinue }
+    } else {
+        [System.Windows.Forms.MessageBox]::Show("No se pudo restablecer el acceso (código $codigo). Revisa el detalle en la ventana del panel.", "Tipo", "OK", "Error") | Out-Null
     }
 }
 
@@ -330,9 +379,14 @@ function Update-Status {
 
     try {
         $response = Invoke-WebRequest -Uri "$url/api/estado" -UseBasicParsing -TimeoutSec 2
-        if ($response.StatusCode -eq 200) {
+        $esTipo = $false
+        try { $esTipo = (($response.Content | ConvertFrom-Json).aplicacion -eq "Tipo") } catch {}
+        if ($response.StatusCode -eq 200 -and $esTipo) {
             $appLabel.Text = "Tipo: en ejecucion ($url)"
             $appLabel.ForeColor = [System.Drawing.Color]::DarkGreen
+        } elseif ($response.StatusCode -eq 200) {
+            $appLabel.Text = "Tipo: el puerto $port lo usa otra aplicacion"
+            $appLabel.ForeColor = [System.Drawing.Color]::DarkOrange
         } else {
             $appLabel.Text = "Tipo: respuesta inesperada ($($response.StatusCode))"
             $appLabel.ForeColor = [System.Drawing.Color]::DarkOrange
@@ -353,7 +407,7 @@ $iconPath = Join-Path $Root "Tipo.ico"
 if (Test-Path $iconPath) { try { $form.Icon = New-Object System.Drawing.Icon($iconPath) } catch {} }
 
 $title = New-Object System.Windows.Forms.Label
-$title.Text = "Tipo 0.3.0-beta.2 - instalacion local segura"
+$title.Text = "Tipo 0.3.1-beta.1 - instalacion local segura"
 $title.Font = New-Object System.Drawing.Font("Segoe UI", 17, [System.Drawing.FontStyle]::Bold)
 $title.Location = New-Object System.Drawing.Point(22, 18)
 $title.Size = New-Object System.Drawing.Size(780, 34)
@@ -411,12 +465,12 @@ New-Button "Detener" 614 164 { Invoke-ConsoleScript "detener.bat" "Tipo - detene
 
 New-Button "Gestionar acceso" 26 220 { Show-ResetAdminDialog; Update-Status }
 New-Button "Reparar permisos" 222 220 { Repair-DataPermissions; Update-Status }
-New-Button "Ver estado Docker" 418 220 { Invoke-Capture "docker compose ps"; Update-Status }
-New-Button "Ver logs" 614 220 { Invoke-Capture "docker compose logs --tail=160" }
+New-Button "Ver estado Docker" 418 220 { $null = Invoke-Capture "docker compose ps"; Update-Status }
+New-Button "Ver logs" 614 220 { $null = Invoke-Capture "docker compose logs --tail=160" }
 
 New-Button "Desinstalar" 26 276 {
     $confirm = [System.Windows.Forms.MessageBox]::Show(
-        "Se abrira el desinstalador de Tipo. No elimina Docker ni Ollama del equipo. ¿Continuar?",
+        "Se abrira el desinstalador de Tipo. Borra los usuarios, lotes, documentos y resultados guardados por Tipo; no elimina Docker ni Ollama del equipo. ¿Continuar?",
         "Tipo - desinstalar",
         "YesNo",
         "Warning"

@@ -14,7 +14,7 @@ REM Usar IPv4 explícito evita fallos en Windows cuando localhost resuelve a ::1
 set "TIPO_LOCAL_HOST=127.0.0.1"
 
 echo.
-echo Tipo 0.3.0-beta.2 - instalacion local
+echo Tipo 0.3.1-beta.1 - instalacion local
 echo ----------------------------------------
 echo.
 
@@ -104,6 +104,8 @@ if not errorlevel 1 (
     set APP_SERVICE=app-external
     echo    OK - Ollama instalado y arrancado ^(127.0.0.1:11434^).
     echo        Tipo usara tu instalacion local de Ollama.
+    echo        Recomendado: variable de entorno OLLAMA_NO_CLOUD=1 en tu cuenta de
+    echo        Windows para que Ollama solo use modelos locales.
 ) else if defined OLLAMA_EXE (
     echo    AVISO - Ollama parece instalado, pero no esta arrancado en 127.0.0.1:11434.
     echo            Tipo continuara usando Ollama dentro de Docker.
@@ -119,6 +121,15 @@ REM 4. Puerto configurado
 REM -----------------------------------------------------------------------------
 echo.
 echo [4/10] Comprobando puerto de la aplicacion...
+
+REM Antes de usar ningun valor de .env se comprueba que es valido: PUERTO se
+REM inserta en ordenes de PowerShell y PYTHON_IMAGE decide la imagen base.
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\windows\validar-env.ps1"
+if errorlevel 1 (
+    echo.
+    pause
+    exit /b 1
+)
 
 set PUERTO=8769
 if exist .env (
@@ -209,6 +220,15 @@ if errorlevel 1 (
     )
 )
 del python-image.log >nul 2>&1
+
+REM Segunda comprobacion: si no se pudo fijar el digest, se usara el valor
+REM que ya hubiera en .env, y solo se acepta python:3.12-slim.
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\windows\validar-env.ps1"
+if errorlevel 1 (
+    echo.
+    pause
+    exit /b 1
+)
 
 REM -----------------------------------------------------------------------------
 REM 7. Construccion de imagen

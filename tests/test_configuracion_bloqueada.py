@@ -23,6 +23,10 @@ BLOQUEADOS = {
     "ALLOW_REMOTE_OLLAMA": "false",
     "ALLOW_NETWORK_EXPOSURE": "false",
     "TIPO_AUTH_DISABLED": "false",
+    # Revisión de noviembre de 2026 (0.3.1-beta.1):
+    "INCLUIR_HASH_DOCUMENTO_AUDITORIA": "true",
+    "PERMITIR_APAGADO_UI": "true",
+    "TMPDIR": "/app/data/tmp",
 }
 
 

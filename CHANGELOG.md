@@ -3,9 +3,109 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Tipo sigue [versionado semántico](https://semver.org/lang/es/) en su variante beta.
 
-## [Sin publicar]
+## [0.3.1-beta.1] — pendiente de publicación
 
-### Seguridad
+Release de **seguridad y privacidad** preparada para el curso de SEDIC.
+Recoge todo lo hecho en `main` desde julio (que nunca llegó a publicarse) y
+la revisión de noviembre de 2026. Recomendada para todas las instalaciones:
+la 0.3.0-beta.2 publicada lleva Pillow 12.3.0 y pypdf 6.13.3, con avisos
+críticos y altos.
+
+### Seguridad (revisión de noviembre de 2026)
+
+- **Recuperar el administrador desde el panel de Windows no funcionaba.** La
+  contraseña se escribía en un `.env` temporal y se pasaba con
+  `docker compose run --env-file`, que solo sirve para interpolar el fichero
+  de Compose: la variable no llegaba al contenedor. Ahora viaja solo en el
+  entorno del proceso (`-e TIPO_RECOVERY_PASSWORD`), sin tocar el disco. El
+  panel valida el nombre de usuario con el mismo patrón que el backend antes
+  de montar la orden de `cmd.exe`, comprueba el código de salida de cada paso
+  y lee stdout y stderr en paralelo (con `docker compose build` el panel podía
+  quedarse colgado con el búfer de stderr lleno).
+- **Validación de `.env` antes de usarlo** (`tools/windows/validar-env.ps1`,
+  `validar_env` en `instalar.sh`): `PUERTO` se insertaba en órdenes de
+  PowerShell y un valor con comillas ejecutaba código; `PYTHON_IMAGE` podía
+  cambiar la imagen base del contenedor que procesa los documentos. Ahora
+  `PUERTO` debe ser un número entre 1024 y 65535, `PYTHON_IMAGE` solo admite
+  `python:3.12-slim` (con o sin digest), y `MODELO_*` y `PERFIL` se validan.
+- **Linux: Ollama dentro de Docker por defecto.** El perfil `external` no
+  conectaba con el Ollama del equipo (escucha en `127.0.0.1` y el contenedor
+  llega por el puente de Docker), y el remedio habitual,
+  `OLLAMA_HOST=0.0.0.0`, abre Ollama a toda la red local. El instalador usa
+  `bundled` salvo `TIPO_PERFIL=external`, y el README explica cómo hacerlo
+  sin exponer Ollama.
+- **Apagar Tipo desde la interfaz exige ser administrador.** Un usuario normal
+  podía detener el servicio para todos. El botón se oculta a quien no lo es.
+- **Delimitadores del prompt neutralizados** (`app/delimitadores.py`, como en
+  PlumA 0.7.2). El texto del documento, los nombres de archivo y las etiquetas
+  ya no pueden contener `<<<DOCUMENTO_FIN>>>` ni imitar las cabeceras de zona
+  y página (`#####`, `=====`) o de fuente (`### Fuente:`).
+- **`INCLUIR_HASH_DOCUMENTO_AUDITORIA` y `PERMITIR_APAGADO_UI`** pasan a ser
+  literales en `docker-compose.yml`, como el resto de controles.
+- **`MODELO_BASE` y `MODELO_NOMBRE`** se validan antes de `/api/pull`: no se
+  admiten registros de modelos distintos del de Ollama y de Hugging Face.
+- **Ollama en Docker en modo solo local** (`OLLAMA_NO_CLOUD=1`).
+  `scripts/actualizar_ollama.sh` / `.ps1` fijan el digest de una versión
+  concreta, comprueban la versión que informa la imagen y rechazan 0.34.2–0.34.x
+  (CVE-2026-103663, path traversal en `/api/pull`).
+- **Sesiones:** tope absoluto de 7 días (`TIPO_SESSION_MAX_SECONDS`) a la
+  renovación deslizante, y un inicio de sesión nuevo revoca el token anterior
+  de ese navegador.
+- **lxml** 6.1.0 → **6.1.1** (CVE-2026-49825, en `Cleaner`, que Tipo no usa;
+  se sube para que `pip-audit --strict` no bloquee el CI).
+
+### Privacidad (revisión de noviembre de 2026)
+
+- **Conservación limitada por defecto.** Los lotes terminados se borran a los
+  30 días (antes `.env.example` los conservaba sin límite) y los documentos
+  originales se borran en cuanto cada libro termina
+  (`TIPO_LOTE_CONSERVAR_ORIGINALES=false`). La retención se aplica también
+  cada 6 horas mientras el worker está en reposo, no solo al arrancar o al
+  crear un lote. La interfaz muestra el plazo en cada lote.
+- **Modo incógnito completo.** No se calcula la huella SHA-256 y la respuesta
+  (y con ella la exportación JSON) sustituye los nombres de archivo por
+  `archivo_1`, `archivo_2`…; también en el `result.json` de los lotes
+  incógnito. El nombre del fichero ya no aparece en el log cuando falla su
+  validación en incógnito.
+- **Eventos de seguridad con retención** de 90 días
+  (`TIPO_EVENTOS_RETENCION_DIAS`).
+- El desinstalador y el panel avisan de que se borran los usuarios, lotes,
+  documentos y resultados.
+
+### Corregido
+
+- Las subidas de lotes se escribían en `/tmp`, un tmpfs de 512 MB en RAM que
+  cuenta contra el límite de memoria del contenedor: un lote de más de unos
+  500 MB fallaba y uno menor podía llevar el contenedor al límite de memoria.
+  Ahora van a `/app/data/tmp`, en el volumen, que se vacía al arrancar.
+- El panel de Windows tomaba 8082 (el puerto de PlumA) como puerto por defecto
+  y podía dar por arrancado Tipo cuando respondía PlumA. Ahora usa 8769 y
+  comprueba que quien responde es Tipo (`/api/estado` incluye `aplicacion`).
+- Las conexiones SQLite se cierran siempre al terminar cada operación (el
+  gestor de contexto de `sqlite3` solo hacía commit o rollback).
+- Un ZIP cifrado o con un método de compresión no admitido en un lote
+  devuelve un error claro en lugar de un error 500.
+- `auth_cli reset-admin` purga lotes huérfanos al crear un usuario nuevo, como
+  ya hacía la API.
+- `instalar.sh` escribe el log de construcción en un temporal propio
+  (`mktemp`) en lugar de `/tmp/build.log`.
+- El panel de Windows se guarda en UTF-8 con BOM: Windows PowerShell 5.1
+  mostraba mal las tildes y la «ñ».
+- CI: se retira el permiso `security-events: write`, que no se usaba, y se
+  añade una prueba con el sandbox de parsers activado.
+
+### Seguridad (noviembre de 2026, ya en `main`)
+
+- Bloqueo de modelos remotos de Ollama por metadatos (`remote_host`,
+  `remote_model`), no solo por la etiqueta `:cloud`, antes de cada inferencia y
+  en el arranque.
+- Cliente HTTP único hacia Ollama con `trust_env=False` y sin redirecciones.
+- `CabecerasSeguridad` como middleware más externo; PBKDF2 (600 000
+  iteraciones) siempre fuera del bucle de eventos.
+- Puerto 8769 por defecto, para poder usar Tipo y PlumA a la vez.
+- **pypdf** → **6.21.4**.
+
+### Seguridad (octubre de 2026, ya en `main`)
 
 - **Pillow** 12.3.0 → **13.0.0**: 4 avisos críticos y 23 altos (desbordamientos
   de heap en los decodificadores TIFF y JPEG y en FreeType, inyección de
@@ -38,17 +138,25 @@ Tipo sigue [versionado semántico](https://semver.org/lang/es/) en su variante b
 
 ### Cambiado
 
-- Versión unificada en 0.3.0-beta.2, la última publicada en este fichero:
-  `VERSION` decía 0.2.0-beta.7, `app/version.py` 0.3.0-beta.1 y
-  `pyproject.toml` 0.3.0b1. También se actualizan el instalador, el panel de
-  Windows, `.env.example` y `scripts/crear_release_windows.ps1`.
+- Versión unificada en 0.3.1-beta.1 en `VERSION`, `app/version.py`,
+  `pyproject.toml` (antes desalineados entre 0.2.0-beta.7, 0.3.0-beta.1 y
+  0.3.0b2), el instalador, el panel de Windows, `.env.example` y
+  `scripts/crear_release_windows.ps1`.
 - Se retira `README_Tipo_actualizado_v0.3.0-beta.1.md`, una copia antigua del
   README que aún describía los controles de seguridad como variables de `.env`.
 
 ### Notas para la actualización
 
-- Si su `.env` define alguna de esas variables, ya no tiene efecto. Para
-  cambiarlas hay que editar `docker-compose.yml`.
+- Si su `.env` define alguna de las variables que ahora están fijadas en
+  `docker-compose.yml`, ya no tiene efecto. Para cambiarlas hay que editar ese
+  fichero.
+- Si su `.env` viene de una versión anterior, puede tener
+  `TIPO_LOTE_RETENCION_DIAS=0` y `TIPO_LOTE_CONSERVAR_ORIGINALES=true`. El
+  instalador no los cambia, para no borrar datos sin su consentimiento:
+  edítelos a mano si quiere el nuevo comportamiento.
+- Antes de publicar: fijar la versión de Ollama con
+  `scripts/actualizar_ollama.sh <versión>` (el digest actual es de mayo de
+  2026) y anotarla aquí.
 
 ## [0.3.0-beta.2] — 2026-07-15
 

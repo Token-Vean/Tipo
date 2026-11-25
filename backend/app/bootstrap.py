@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from pathlib import Path
 
 import httpx
@@ -49,6 +50,28 @@ def _es_modelo_cloud(nombre: str) -> bool:
         return False
     tag = n.rsplit(":", 1)[1]
     return tag == "cloud" or tag.endswith("-cloud")
+
+# Nombres de modelo admitidos para MODELO_BASE/MODELO_NOMBRE. Vienen de .env
+# y bootstrap hace /api/pull con ellos: un nombre con un registro arbitrario
+# (`servidor.ejemplo/espacio/modelo`) haría que Ollama descargase capas de un
+# servidor desconocido, que es justo la vía de CVE-2026-103663 en Ollama
+# 0.34.2–0.34.x. Se admiten el registro oficial y Hugging Face.
+_NOMBRE_MODELO_RE = re.compile(r"^[A-Za-z0-9._:/@+-]{1,160}$")
+_REGISTROS_ADMITIDOS = {"registry.ollama.ai", "ollama.com", "hf.co", "huggingface.co"}
+
+
+def validar_nombre_modelo(nombre: str, variable: str) -> None:
+    n = (nombre or "").strip()
+    if not _NOMBRE_MODELO_RE.fullmatch(n) or ".." in n:
+        raise RuntimeError(f"{variable} contiene caracteres no admitidos: revise el fichero .env.")
+    if "/" in n:
+        primero = n.split("/", 1)[0].lower()
+        if ("." in primero or ":" in primero) and primero not in _REGISTROS_ADMITIDOS:
+            raise RuntimeError(
+                f"{variable} apunta a un registro de modelos no admitido ({primero}). "
+                "Use un modelo de la biblioteca de Ollama o de hf.co."
+            )
+
 
 estado: dict = {
     "fase": "iniciando",
@@ -80,6 +103,8 @@ def _timeout_largo() -> httpx.Timeout:
 
 async def preparar() -> None:
     try:
+        validar_nombre_modelo(MODELO_BASE, "MODELO_BASE")
+        validar_nombre_modelo(MODELO_NOMBRE, "MODELO_NOMBRE")
         if _es_modelo_cloud(MODELO_BASE) or _es_modelo_cloud(MODELO_NOMBRE):
             raise RuntimeError(
                 "Tipo no admite modelos cloud de Ollama en modo local. "

@@ -18,6 +18,39 @@ avisar() { echo "  ${AMAR}!${FIN} $1"; }
 fallar() { echo "  ${ROJO}✗${FIN} $1" >&2; exit 1; }
 nota()   { echo "    ${GRIS}$1${FIN}"; }
 
+# Comprueba los valores de .env que el instalador usa directamente o que
+# deciden qué se ejecuta (imagen base, modelos). Misma regla que
+# tools/windows/validar-env.ps1. Sin .env no hay nada que validar.
+validar_env() {
+    [[ -f .env ]] || return 0
+    local errores=0 clave valor
+    while IFS='=' read -r clave valor; do
+        clave="${clave//[[:space:]]/}"
+        valor="${valor%$'\r'}"
+        case "$clave" in
+            PUERTO)
+                if [[ ! "$valor" =~ ^[0-9]{2,5}$ ]] || (( 10#$valor < 1024 || 10#$valor > 65535 )); then
+                    avisar "PUERTO no es válido (debe ser un número entre 1024 y 65535)"; errores=1
+                fi ;;
+            PYTHON_IMAGE)
+                if [[ ! "$valor" =~ ^python:3\.12-slim(@sha256:[0-9a-f]{64})?$ ]]; then
+                    avisar "PYTHON_IMAGE solo admite python:3.12-slim, con o sin @sha256:<digest>"; errores=1
+                fi ;;
+            MODELO_BASE|MODELO_NOMBRE)
+                if [[ ! "$valor" =~ ^[A-Za-z0-9._:/@+-]{1,160}$ ]]; then
+                    avisar "$clave no es un nombre de modelo válido"; errores=1
+                fi ;;
+            PERFIL)
+                if [[ ! "$valor" =~ ^(bundled|external)$ ]]; then
+                    avisar "PERFIL debe ser bundled o external"; errores=1
+                fi ;;
+        esac
+    done < <(grep -E '^[[:space:]]*(PUERTO|PYTHON_IMAGE|MODELO_BASE|MODELO_NOMBRE|PERFIL)=' .env || true)
+    if [[ "$errores" -ne 0 ]]; then
+        fallar "El fichero .env contiene valores no válidos. Corrígelos o bórralo para que se cree de nuevo."
+    fi
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -62,24 +95,56 @@ ok "Docker Compose disponible"
 paso "Detectando motor de IA"
 
 PERFIL="bundled"
+OLLAMA_LOCAL=false
 if command -v curl &>/dev/null; then
     if curl -sfm 3 http://localhost:11434/api/tags >/dev/null 2>&1; then
-        PERFIL="external"
+        OLLAMA_LOCAL=true
     fi
 fi
 
-if [[ "$PERFIL" == "external" ]]; then
-    ok "Ollama detectado en el equipo (puerto 11434)"
-    nota "La aplicación usará tu Ollama y los modelos que tengas."
+if [[ "$(uname -s)" == "Linux" ]]; then
+    # Con Docker Engine en Linux, el contenedor llega al anfitrión por la IP
+    # del puente de Docker (172.17.0.1), y Ollama escucha por defecto solo en
+    # 127.0.0.1: el perfil external no conecta. El remedio habitual,
+    # OLLAMA_HOST=0.0.0.0, deja Ollama (sin autenticación) abierto a toda la
+    # red local. Por eso en Linux se usa Ollama en Docker salvo que se pida
+    # expresamente TIPO_PERFIL=external.
+    if [[ "${TIPO_PERFIL:-}" == "external" ]]; then
+        PERFIL="external"
+        ok "Perfil external solicitado (TIPO_PERFIL=external)"
+        nota "Tu Ollama debe escuchar en la IP del puente de Docker, por ejemplo"
+        nota "OLLAMA_HOST=172.17.0.1:11434. No uses nunca OLLAMA_HOST=0.0.0.0."
+    else
+        if [[ "$OLLAMA_LOCAL" == true ]]; then
+            ok "Ollama detectado en el equipo, pero en Linux se usará Ollama dentro de Docker"
+            nota "Para usar tu Ollama: TIPO_PERFIL=external ./instalar.sh (lee la nota de seguridad del README)."
+        else
+            ok "No se ha detectado Ollama en el equipo"
+            nota "Se usará Ollama dentro de Docker."
+        fi
+    fi
 else
-    ok "No se ha detectado Ollama en el equipo"
-    nota "Se usará Ollama dentro de Docker. Si prefieres Ollama nativo, instálalo desde https://ollama.com/download y vuelve a ejecutar este script."
+    if [[ "${TIPO_PERFIL:-}" == "bundled" ]]; then
+        PERFIL="bundled"
+    elif [[ "$OLLAMA_LOCAL" == true ]]; then
+        PERFIL="external"
+    fi
+    if [[ "$PERFIL" == "external" ]]; then
+        ok "Ollama detectado en el equipo (puerto 11434)"
+        nota "La aplicación usará tu Ollama y los modelos que tengas."
+        nota "Recomendado: activa OLLAMA_NO_CLOUD=1 en tu Ollama para que solo use modelos locales."
+    else
+        ok "Se usará Ollama dentro de Docker"
+        nota "Si prefieres Ollama nativo, instálalo desde https://ollama.com/download y vuelve a ejecutar este script."
+    fi
 fi
 
 # -----------------------------------------------------------------------------
 # 4. Puerto configurado (del .env)
 # -----------------------------------------------------------------------------
 paso "Comprobando puerto de la aplicación"
+
+validar_env
 
 PUERTO=8769
 if [[ -f .env ]] && grep -q "^PUERTO=" .env; then
@@ -141,6 +206,8 @@ if ! grep -q "^TIPO_CREAR_MODELO_DERIVADO=" .env 2>/dev/null; then
     echo "TIPO_CREAR_MODELO_DERIVADO=false" >> .env
 fi
 
+validar_env
+
 # -----------------------------------------------------------------------------
 # 5.5. Tipografías
 # -----------------------------------------------------------------------------
@@ -156,9 +223,11 @@ nota "(si has actualizado el código, esto tardará ~30s)"
 
 export COMPOSE_PROFILES="$PERFIL"
 
-if ! $COMPOSE build 2>/tmp/build.log; then
+BUILD_LOG="$(mktemp "${TMPDIR:-/tmp}/tipo-build.XXXXXX")"
+trap 'rm -f "$BUILD_LOG"' EXIT
+if ! $COMPOSE build 2>"$BUILD_LOG"; then
     echo ""
-    cat /tmp/build.log
+    cat "$BUILD_LOG"
     fallar "Fallo al construir la imagen."
 fi
 

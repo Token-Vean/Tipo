@@ -30,6 +30,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from .delimitadores import neutralizar_cabeceras
+
 
 def _int_env(nombre: str, defecto: int, minimo: int = 0) -> int:
     try:
@@ -174,7 +176,9 @@ def construir_texto_zonificado(zonif: Zonificacion) -> str:
         cabecera = (
             f"===== {p.zona} · página {p.numero} de {zonif.paginas_totales} ====="
         )
-        texto = p.texto.strip()
+        # El texto de la página no puede contener marcas que imiten las
+        # cabeceras de zona/página ni los delimitadores del prompt.
+        texto = neutralizar_cabeceras(p.texto).strip()
         if texto:
             bloques.append(f"{cabecera}\n{texto}")
         else:
@@ -210,7 +214,7 @@ def segmentar_texto_plano(texto: str) -> tuple[str, dict]:
 
     Devuelve (texto_zonificado, resumen_cobertura).
     """
-    texto = (texto or "").strip()
+    texto = neutralizar_cabeceras(texto or "").strip()
     total = len(texto)
     if total == 0:
         return "", {"estrategia": "zonas", "paginas_totales": None,

@@ -32,6 +32,8 @@ if exist .env (
 echo.
 echo Esta operacion va a eliminar:
 echo   - Los contenedores Docker de Tipo.
+echo   - Los datos de Tipo guardados en Docker: usuarios, lotes, documentos
+echo     subidos y resultados. Exporta antes lo que quieras conservar.
 
 if "!PERFIL!"=="bundled" (
     echo   - El volumen Docker con el modelo de IA ^(3-5 GB^).

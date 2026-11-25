@@ -29,6 +29,7 @@ from typing import Any, Literal
 import yaml
 
 from . import llm
+from .delimitadores import etiqueta_segura, neutralizar_delimitadores
 
 logger = logging.getLogger(__name__)
 
@@ -363,7 +364,7 @@ def _bloque_ejemplos(ejemplos: list[dict]) -> str:
         partes.append(f"\n## Ejemplo {i}{desc}")
         partes.append("Material:")
         partes.append("<<<EJEMPLO_INICIO>>>")
-        partes.append(ej["texto"])
+        partes.append(neutralizar_delimitadores(ej["texto"]))
         partes.append("<<<EJEMPLO_FIN>>>")
         partes.append("JSON correcto:")
         partes.append(json.dumps(ej["salida"], indent=2, ensure_ascii=False))
@@ -461,7 +462,7 @@ def construir_prompt(
     fuentes = ""
     if entrada.imagenes_etiquetas:
         fuentes = "\n# Imágenes aportadas\n" + "\n".join(
-            f"Imagen {i + 1}: {etiqueta}"
+            f"Imagen {i + 1}: {etiqueta_segura(etiqueta)}"
             for i, etiqueta in enumerate(entrada.imagenes_etiquetas)
         ) + "\n"
 
@@ -496,8 +497,11 @@ def construir_prompt(
             for el in extraibles
         }
     }
+    # El texto del documento ya llega con las cabeceras de zona neutralizadas
+    # (zonas.py); aquí se cierra la última vía: que contenga los propios
+    # delimitadores <<<DOCUMENTO_FIN>>> y salga del bloque de datos.
     documento = (
-        entrada.texto if entrada.texto
+        neutralizar_delimitadores(entrada.texto) if entrada.texto
         else "[Se han proporcionado imágenes de las zonas del libro, sin capa textual extraída]"
     )
 

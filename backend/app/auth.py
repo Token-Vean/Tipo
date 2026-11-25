@@ -30,6 +30,8 @@ import secrets
 import sqlite3
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +51,11 @@ AUTH_DISABLED = os.getenv("TIPO_AUTH_DISABLED", "false").strip().lower() in VALO
 COOKIE_NAME = os.getenv("TIPO_SESSION_COOKIE", "tipo_session")
 COOKIE_SECURE = os.getenv("TIPO_COOKIE_SECURE", "false").strip().lower() in VALORES_TRUE
 SESSION_TTL_SECONDS = max(900, int(os.getenv("TIPO_SESSION_TTL_SECONDS", str(12 * 60 * 60))))
+# Tope absoluto: la renovación deslizante no puede alargar una sesión más
+# allá de este plazo desde el inicio de sesión (por defecto, 7 días).
+SESSION_MAX_SECONDS = max(SESSION_TTL_SECONDS, int(os.getenv("TIPO_SESSION_MAX_SECONDS", str(7 * 24 * 60 * 60))))
+# Retención de la tabla security_events (intentos de acceso, altas, bajas…).
+EVENTOS_RETENCION_DIAS = max(1, int(os.getenv("TIPO_EVENTOS_RETENCION_DIAS", "90")))
 PBKDF2_ITERATIONS = max(200_000, int(os.getenv("TIPO_PBKDF2_ITERATIONS", "600000")))
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9._@-]{3,64}$")
 PASSWORD_MIN_LENGTH = int(os.getenv("TIPO_PASSWORD_MIN_LENGTH", "10"))
@@ -234,11 +241,22 @@ def _migrate_legacy_json_if_needed(conn: sqlite3.Connection) -> None:
         logger.warning("No se pudo migrar users.json a SQLite: %s", exc)
 
 
-def _db() -> sqlite3.Connection:
+@contextmanager
+def _db() -> Iterator[sqlite3.Connection]:
+    """Conexión SQLite de un solo uso.
+
+    El gestor de contexto de sqlite3.Connection solo hace commit/rollback; no
+    cierra la conexión, que quedaba en manos del recolector. Aquí se cierra
+    siempre al salir del bloque.
+    """
     conn = _connect()
-    _ensure_schema(conn)
-    _migrate_legacy_json_if_needed(conn)
-    return conn
+    try:
+        _ensure_schema(conn)
+        _migrate_legacy_json_if_needed(conn)
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def _empty_store() -> dict[str, Any]:
@@ -529,8 +547,35 @@ def _crear_sesion(username: str) -> str:
 def _purgar_sesiones(now: float | None = None) -> None:
     now = now or time.time()
     for token, data in list(_sessions.items()):
-        if float(data.get("expires", 0)) < now:
+        caducada = float(data.get("expires", 0)) < now
+        agotada = now - float(data.get("created", now)) > SESSION_MAX_SECONDS
+        if caducada or agotada:
             _sessions.pop(token, None)
+
+
+def _revocar_token(token: str | None) -> None:
+    if not token:
+        return
+    with _sessions_lock:
+        _sessions.pop(token, None)
+
+
+def purgar_eventos_antiguos() -> int:
+    """Borra de security_events lo anterior a EVENTOS_RETENCION_DIAS.
+
+    La tabla guarda nombres de usuario intentados (a veces, una contraseña
+    escrita por error en el campo de usuario) y no necesita historia
+    indefinida en una instalación local. Se llama al arrancar."""
+    corte = time.strftime(
+        "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - EVENTOS_RETENCION_DIAS * 86400)
+    )
+    try:
+        with _users_lock, _db() as conn:
+            cur = conn.execute("DELETE FROM security_events WHERE created_at < ?", (corte,))
+            return cur.rowcount or 0
+    except (sqlite3.Error, RuntimeError):
+        logger.warning("No se pudieron purgar eventos de seguridad antiguos", exc_info=True)
+        return 0
 
 
 def _cerrar_sesiones_usuario(username: str, *, excepto_token: str | None = None) -> None:
@@ -565,8 +610,13 @@ def usuario_desde_request(request: Request) -> dict[str, Any] | None:
         if not session:
             return None
         username = str(session.get("username"))
-        # Renovación deslizante de sesión durante uso activo.
-        session["expires"] = time.time() + SESSION_TTL_SECONDS
+        # Renovación deslizante de sesión durante uso activo, sin pasar del
+        # tope absoluto contado desde el inicio de sesión.
+        ahora = time.time()
+        session["expires"] = min(
+            ahora + SESSION_TTL_SECONDS,
+            float(session.get("created", ahora)) + SESSION_MAX_SECONDS,
+        )
     with _users_lock:
         try:
             with _db() as conn:
@@ -730,6 +780,9 @@ async def login(payload: LoginPayload, response: Response, request: Request):
     _check_login_lock(request, username)
     user = await asyncio.to_thread(_login_sync, request, username, payload.password)
     _clear_login_failures(request, username)
+    # Un inicio de sesión nuevo invalida el token que este navegador tuviera
+    # antes (evita que sobrevivan sesiones previas, p. ej. de otro usuario).
+    _revocar_token(request.cookies.get(COOKIE_NAME))
     token = _crear_sesion(username)
     _set_session_cookie(response, token)
     return {"ok": True, "user": {"username": username, "role": user.get("role", "user")}}
