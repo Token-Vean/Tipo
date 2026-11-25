@@ -103,6 +103,33 @@ def test_version_y_notas_alineadas():
     assert f"Tipo {version}" in panel
 
 
+def _texto(ruta: str) -> str:
+    return (ROOT / ruta).read_text(encoding="utf-8-sig")
+
+
+def test_deteccion_de_ollama_compartida_y_sin_proxy():
+    # Con Invoke-WebRequest contra localhost y 2-3 s de espera, el panel daba
+    # por "no arrancado" un Ollama en marcha (proxy del sistema/WPAD, ::1) y
+    # el instalador pasaba en silencio a Ollama en Docker.
+    ayuda = _texto("tools/windows/ollama-equipo.ps1")
+    assert "$req.Proxy = $null" in ayuda
+    assert "http://127.0.0.1:11434" in ayuda
+    assert "--version" in ayuda and "could not connect" in ayuda
+    for ruta in ("tools/windows/Tipo-Control.ps1", "tools/windows/comprobar-ollama.ps1"):
+        texto = _texto(ruta)
+        assert "ollama-equipo.ps1" in texto, ruta
+        assert "Invoke-WebRequest" not in texto, ruta
+        assert "localhost:11434" not in texto, ruta
+    instalar = _texto("instalar.bat")
+    assert "Invoke-WebRequest" not in instalar
+    assert "comprobar-ollama.ps1" in instalar
+    # 0 = Ollama del equipo; 2 = Docker; cualquier otro código detiene.
+    assert '"!OLLAMA_ESTADO!"=="0" goto ollama_equipo' in instalar
+    assert '"!OLLAMA_ESTADO!"=="2" goto ollama_docker' in instalar
+    bloque = instalar.split('goto ollama_docker', 1)[1].split(':ollama_equipo', 1)[0]
+    assert "exit /b 1" in bloque
+
+
 def test_compose_con_nombre_de_proyecto_fijo():
     # En el paquete, la carpeta del Compose se llama «programa», como en el de
     # PlumA: sin nombre fijo las dos aplicaciones compartirían proyecto.

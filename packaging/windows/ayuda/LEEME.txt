@@ -75,6 +75,11 @@ SI ALGO NO FUNCIONA
 - El instalador dice que Ollama está afectado por un aviso de seguridad: tu
   Ollama es anterior a 0.35.0. Actualízalo desde https://ollama.com/download,
   reinícialo y vuelve a pulsar «Instalar / iniciar».
+- El panel dice «Ollama: instalado, no arrancado» y Ollama está en marcha:
+  pulsa «Comprobar requisitos»; el mensaje y el cuadro inferior del panel
+  muestran el motivo. Si dice «no responde en 127.0.0.1», revisa la variable
+  OLLAMA_HOST (debe estar vacía o ser 127.0.0.1:11434, nunca 0.0.0.0) y si
+  un antivirus o cortafuegos bloquea Ollama.
 - El instalador dice que el puerto 8769 está ocupado: otra aplicación lo usa.
   Ciérrala o cambia PUERTO en programa\.env (no uses el 8082).
 - Guía completa: programa\README.md.

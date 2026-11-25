@@ -58,6 +58,11 @@ Pensado para equipos modestos: menos memoria y menos espera por documento.
   pueden tener las dos abiertas a la vez.
 - Nuevo paquete: se abre con «Tipo - Instalar y abrir» y la ayuda está en la
   carpeta `ayuda`.
+- Detección más fiable del Ollama del equipo. Antes, con algunos ajustes de
+  proxy de Windows, el panel decía «Ollama: instalado, no arrancado» con
+  Ollama en marcha y el instalador descargaba otra vez el modelo dentro de
+  Docker. Si Ollama está arrancado pero no responde, ahora el instalador se
+  detiene y explica por qué.
 
 ## Instalación
 
