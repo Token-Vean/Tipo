@@ -48,6 +48,13 @@
 #                                         manipulado (corregidos en 6.21.1).
 #   - certifi           2026.4.22 -> 2026.10.19  Retira raíces emSign cuyas CA
 #                                         intermedias se comprometieron.
+#
+# Actualizaciones de seguridad (revisión de noviembre 2026, Tipo 0.3.1):
+#   - lxml              6.1.0  -> 6.1.1   CVE-2026-49825 (lxml.html.clean.Cleaner
+#                                         sin xlink:href). Tipo no usa Cleaner
+#                                         (lxml entra por python-docx), pero se
+#                                         sube para que pip-audit --strict no
+#                                         bloquee el CI.
 # =============================================================================
 
 # Web / API
@@ -84,4 +91,4 @@ watchfiles==1.1.1
 websockets==16.0
 certifi==2026.10.19
 idna==3.15
-lxml==6.1.0
+lxml==6.1.1

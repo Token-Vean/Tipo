@@ -272,8 +272,11 @@ def test_incognito_borra_originales_al_terminar(tmp_path: Path, monkeypatch):
     assert [p.name for p in item_dir.iterdir()] == ["result.json"]
 
 
-def test_modo_normal_conserva_originales_por_defecto(tmp_path: Path, monkeypatch):
+def test_modo_normal_conserva_originales_si_se_pide(tmp_path: Path, monkeypatch):
+    # Desde 0.3.1 el valor por defecto es no conservarlos (ver
+    # test_revision_2026_11.py); aquí se comprueba la opción explícita.
     _preparar(tmp_path, monkeypatch)
+    monkeypatch.setattr(lotes, "CONSERVAR_ORIGINALES", True)
     lote_id = _crear_lote([("libro.pdf", b"%PDF-1.4 normal")])
     with lotes._db() as conn:
         item = conn.execute("SELECT id, ruta_entrada FROM lote_items WHERE lote_id = ?", (lote_id,)).fetchone()

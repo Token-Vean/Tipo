@@ -1,0 +1,83 @@
+﻿Tipo 0.3.1-beta.1 para Windows
+==============================
+
+Tipo propone registros bibliográficos (ISBD, MARC21, Dublin Core) de
+monografías impresas modernas a partir del PDF o de fotos de la portada,
+la página de créditos y el colofón. Cada dato lleva su evidencia literal y su
+confianza. Las propuestas son borradores que el profesional debe revisar.
+
+Los documentos y su contenido se procesan en este equipo. Tipo no usa
+servicios de IA remotos ni envía el contenido de los documentos a la nube.
+Solo necesita Internet durante la instalación, para descargar las imágenes de
+Docker y, si no tienes Ollama, el modelo de IA.
+
+PRIMERA VEZ
+-----------
+1. Instala Docker Desktop y ábrelo:
+   https://www.docker.com/products/docker-desktop/
+2. Abre «Tipo - Instalar y abrir», en la carpeta principal.
+3. En el panel, pulsa «Comprobar requisitos» y después «Instalar / iniciar».
+   Se abre una ventana negra con el progreso. La primera vez tarda varios
+   minutos y, si no tienes Ollama, descarga el modelo (unos 3-5 GB).
+4. Al terminar se abre el navegador. Crea el usuario administrador y guarda
+   la contraseña: no se puede recuperar, solo restablecer.
+
+Si ya tienes Ollama instalado en el equipo, debe ser la versión 0.35.0 o
+posterior (compruébalo con «ollama --version»). Las anteriores tienen un
+fallo de seguridad y Tipo no se instala con ellas. Actualízalo desde
+https://ollama.com/download antes de instalar: tus modelos se conservan.
+
+No muevas ni renombres las carpetas «ayuda» y «programa»: el panel las
+necesita junto a «Tipo - Instalar y abrir».
+
+DÍAS SIGUIENTES
+---------------
+«Tipo - Instalar y abrir» > «Instalar / iniciar» (ya no descarga nada y
+tarda menos) > «Abrir Tipo». Al terminar, «Detener». Cerrar el panel no
+detiene Tipo.
+
+QUÉ HACE CADA BOTÓN
+-------------------
+Comprobar requisitos  Revisa Docker Desktop y la versión de Ollama.
+                      No cambia nada.
+Instalar / iniciar    Prepara la configuración, construye la aplicación,
+                      descarga el modelo si hace falta y arranca Tipo.
+Abrir Tipo            Abre http://localhost:8769 en el navegador.
+Detener               Detiene Tipo. Usuarios, lotes y modelo se conservan.
+Gestionar acceso      Restablece la contraseña del administrador.
+Reparar permisos      Corrige los permisos de la carpeta de datos si Tipo
+                      no puede crear el usuario administrador.
+Ver estado Docker     Muestra los contenedores de Tipo.
+Ver logs              Muestra los últimos mensajes de Tipo.
+Desinstalar           Elimina contenedores y datos de Tipo en Docker
+                      (usuarios, lotes, resultados). No borra estas
+                      carpetas, ni Docker, ni tu Ollama.
+
+TUS DATOS
+---------
+Los lotes y sus resultados se borran a los 30 días; los originales subidos
+no se conservan una vez procesados. Exporta lo que quieras guardar. Tipo
+funciona en la dirección 127.0.0.1 de este equipo: no es accesible desde
+otros ordenadores de la red.
+
+Tipo usa el puerto 8769 y PlumA el 8082: puedes tener las dos abiertas.
+
+SI ALGO NO FUNCIONA
+-------------------
+- Aviso de seguridad al abrir: los ficheros descargados de Internet llevan
+  una marca de procedencia. Borra la carpeta, abre las propiedades del ZIP,
+  marca «Desbloquear» y vuelve a descomprimirlo.
+- El panel no se abre: Microsoft está retirando VBScript de Windows. Si tu
+  equipo lo tiene desactivado, usa «Abrir sin VBScript», en esta carpeta
+  (verás un instante una ventana negra).
+- Si tu organización bloquea los scripts de PowerShell, el panel no
+  funcionará. Consulta con tu servicio de informática.
+- El instalador dice que Ollama está afectado por un aviso de seguridad: tu
+  Ollama es anterior a 0.35.0. Actualízalo desde https://ollama.com/download,
+  reinícialo y vuelve a pulsar «Instalar / iniciar».
+- El instalador dice que el puerto 8769 está ocupado: otra aplicación lo usa.
+  Ciérrala o cambia PUERTO en programa\.env (no uses el 8082).
+- Guía completa: programa\README.md.
+
+Tipo es software libre (AGPL-3.0-or-later): programa\LICENSE.
+Código fuente: https://github.com/Token-Vean/Tipo

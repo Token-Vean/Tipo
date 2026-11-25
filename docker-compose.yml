@@ -15,9 +15,13 @@
 # de llamar a `docker compose up`.
 #
 # Controles de seguridad fijados en este fichero (no se leen de .env):
-#   imagen de Ollama (por digest), USAR_SANDBOX_PARSERS,
+#   imagen de Ollama (por digest), OLLAMA_NO_CLOUD, USAR_SANDBOX_PARSERS,
 #   SANDBOX_TIMEOUT_SEGUNDOS, SANDBOX_MEMORIA_MB, ALLOW_REMOTE_OLLAMA,
-#   ALLOW_NETWORK_EXPOSURE y TIPO_AUTH_DISABLED.
+#   ALLOW_NETWORK_EXPOSURE, TIPO_AUTH_DISABLED,
+#   INCLUIR_HASH_DOCUMENTO_AUDITORIA, PERMITIR_APAGADO_UI y TMPDIR.
+# PYTHON_IMAGE sí se lee de .env (el instalador de Windows escribe ahí el
+# digest de python:3.12-slim), pero instaladores y panel rechazan cualquier
+# valor que no sea python:3.12-slim, con o sin @sha256:<digest>.
 # Un .env manipulado o heredado de una instalación antigua podía sustituir
 # el contenedor que recibe el texto íntegro de los documentos, apagar el
 # aislamiento de los parsers o desactivar el inicio de sesión sin que nada
@@ -26,13 +30,31 @@
 # comprueba.
 # =============================================================================
 
+# Nombre de proyecto fijo. Sin él, Docker Compose usa el nombre de la carpeta:
+# en el paquete de Windows es «programa», el mismo que en el de PlumA, y las dos
+# aplicaciones compartirían proyecto (un «down» de una detendría o borraría
+# contenedores y volúmenes de la otra). También hace que los datos sigan en el
+# mismo volumen (tipo_tipo-data) aunque se cambie la carpeta de sitio.
+name: tipo
+
 services:
 
   # ---------- Ollama en contenedor (perfil "bundled") ----------------------
   ollama:
-    image: ollama/ollama@sha256:7db82c93ff9fae4011a2aa10931b1d2c2a228d508b8736366e3fbaee616b2e8c
+    # Versión fijada en este fichero, sin override desde .env (la misma que
+    # PlumA 0.7.4). 0.21.2, la anterior, está afectada por CVE-2026-103663
+    # (todas las versiones anteriores a 0.35.0). El backend exige además
+    # Ollama >= VERSION_MINIMA_OLLAMA (app/llm.py) al arrancar y antes de cada
+    # inferencia. Para fijarla también por digest:
+    # scripts/actualizar_ollama.sh <versión> (o .ps1).
+    image: ollama/ollama:0.40.17
     container_name: tipo-ollama
     profiles: ["bundled"]
+    environment:
+      # Modo solo local documentado por Ollama: sin modelos cloud ni búsqueda
+      # web. Tipo ya bloquea los modelos remotos por sus metadatos; esto lo
+      # impide también en el propio motor.
+      OLLAMA_NO_CLOUD: "1"
     volumes:
       - ollama-models:/root/.ollama
     expose:
@@ -77,17 +99,19 @@ services:
       SANDBOX_MEMORIA_MB: "1536"
       ALLOW_REMOTE_OLLAMA: "false"
       ALLOW_NETWORK_EXPOSURE: "false"
-      INCLUIR_HASH_DOCUMENTO_AUDITORIA: ${INCLUIR_HASH_DOCUMENTO_AUDITORIA:-true}
-      PERMITIR_APAGADO_UI: ${PERMITIR_APAGADO_UI:-true}
+      INCLUIR_HASH_DOCUMENTO_AUDITORIA: "true"
+      PERMITIR_APAGADO_UI: "true"
       TIPO_AUTH_DISABLED: "false"
       TIPO_DATA_DIR: /app/data
+      # Subidas grandes a disco (volumen), no al /tmp en RAM. Ver temporales.py.
+      TMPDIR: /app/data/tmp
       TIPO_SESSION_TTL_SECONDS: ${TIPO_SESSION_TTL_SECONDS:-43200}
       TIPO_PASSWORD_MIN_LENGTH: ${TIPO_PASSWORD_MIN_LENGTH:-10}
       TIPO_COOKIE_SECURE: ${TIPO_COOKIE_SECURE:-false}
       TIPO_LOGIN_MAX_ATTEMPTS_IP: ${TIPO_LOGIN_MAX_ATTEMPTS_IP:-20}
       TIPO_LOTE_MAX_BYTES_USUARIO: ${TIPO_LOTE_MAX_BYTES_USUARIO:-10737418240}
       TIPO_LOTE_RETENCION_DIAS: ${TIPO_LOTE_RETENCION_DIAS:-30}
-      TIPO_LOTE_CONSERVAR_ORIGINALES: ${TIPO_LOTE_CONSERVAR_ORIGINALES:-true}
+      TIPO_LOTE_CONSERVAR_ORIGINALES: ${TIPO_LOTE_CONSERVAR_ORIGINALES:-false}
       MAX_BYTES_IMAGENES_PETICION: ${MAX_BYTES_IMAGENES_PETICION:-209715200}
       OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-32768}
       OLLAMA_NUM_PREDICT: ${OLLAMA_NUM_PREDICT:-8192}
@@ -148,17 +172,19 @@ services:
       SANDBOX_MEMORIA_MB: "1536"
       ALLOW_REMOTE_OLLAMA: "false"
       ALLOW_NETWORK_EXPOSURE: "false"
-      INCLUIR_HASH_DOCUMENTO_AUDITORIA: ${INCLUIR_HASH_DOCUMENTO_AUDITORIA:-true}
-      PERMITIR_APAGADO_UI: ${PERMITIR_APAGADO_UI:-true}
+      INCLUIR_HASH_DOCUMENTO_AUDITORIA: "true"
+      PERMITIR_APAGADO_UI: "true"
       TIPO_AUTH_DISABLED: "false"
       TIPO_DATA_DIR: /app/data
+      # Subidas grandes a disco (volumen), no al /tmp en RAM. Ver temporales.py.
+      TMPDIR: /app/data/tmp
       TIPO_SESSION_TTL_SECONDS: ${TIPO_SESSION_TTL_SECONDS:-43200}
       TIPO_PASSWORD_MIN_LENGTH: ${TIPO_PASSWORD_MIN_LENGTH:-10}
       TIPO_COOKIE_SECURE: ${TIPO_COOKIE_SECURE:-false}
       TIPO_LOGIN_MAX_ATTEMPTS_IP: ${TIPO_LOGIN_MAX_ATTEMPTS_IP:-20}
       TIPO_LOTE_MAX_BYTES_USUARIO: ${TIPO_LOTE_MAX_BYTES_USUARIO:-10737418240}
       TIPO_LOTE_RETENCION_DIAS: ${TIPO_LOTE_RETENCION_DIAS:-30}
-      TIPO_LOTE_CONSERVAR_ORIGINALES: ${TIPO_LOTE_CONSERVAR_ORIGINALES:-true}
+      TIPO_LOTE_CONSERVAR_ORIGINALES: ${TIPO_LOTE_CONSERVAR_ORIGINALES:-false}
       MAX_BYTES_IMAGENES_PETICION: ${MAX_BYTES_IMAGENES_PETICION:-209715200}
       OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-32768}
       OLLAMA_NUM_PREDICT: ${OLLAMA_NUM_PREDICT:-8192}

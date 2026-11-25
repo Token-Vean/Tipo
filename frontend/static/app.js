@@ -147,6 +147,8 @@ const I18N = {
     loteListos: 'listos',
     loteErrores: 'errores',
     loteEstado: 'estado',
+    loteRetencion: 'se borra {dias} días después de terminar',
+    loteRetencionNunca: 'se conserva hasta que lo borres',
     loteEstadoPendiente: 'pendiente',
     loteEstadoEnProceso: 'en proceso',
     loteEstadoFinalizado: 'finalizado',
@@ -353,6 +355,8 @@ const I18N = {
     loteListos: 'ready',
     loteErrores: 'errors',
     loteEstado: 'status',
+    loteRetencion: 'deleted {dias} days after it finishes',
+    loteRetencionNunca: 'kept until you delete it',
     loteEstadoPendiente: 'pending',
     loteEstadoEnProceso: 'in progress',
     loteEstadoFinalizado: 'finished',
@@ -576,6 +580,14 @@ async function comprobarAutenticacion() {
     ocultarPanelAuth();
     mostrarBotonLogout();
     const perfil = $('#btn-perfil'); if (perfil) perfil.classList.remove('hidden');
+    // El apagado desde la interfaz es solo para administradores (el backend
+    // también lo exige); se oculta el botón al resto para no ofrecer algo
+    // que devolvería 403.
+    const apagarBtn = $('#btn-apagar');
+    if (apagarBtn) {
+      const esAdmin = !authStatus.auth_enabled || authStatus.user?.role === 'admin';
+      apagarBtn.classList.toggle('hidden', !esAdmin);
+    }
     return true;
   }
 }
@@ -1738,11 +1750,19 @@ function toast(msg) {
     const listos = lote.items_listos ?? items.filter(i => i.estado === 'listo').length;
     const errores = lote.items_error ?? items.filter(i => i.estado === 'error').length;
     const estadoLote = lote.estado ? traducirEstado(lote.estado) : '';
+    const alm = loteState.almacenamiento;
+    let retencion = '';
+    if (alm && Number.isFinite(alm.retencion_dias)) {
+      retencion = alm.retencion_dias > 0
+        ? t('loteRetencion').replace('{dias}', String(alm.retencion_dias))
+        : t('loteRetencionNunca');
+    }
     detalle.textContent =
       `${t('loteBook')} ${idx + 1} ${t('loteOf')} ${total}` +
       `  ·  ${t('loteListos')}: ${listos}` +
       (errores ? `  ·  ${t('loteErrores')}: ${errores}` : '') +
-      (estadoLote ? `  ·  ${t('loteEstado')}: ${estadoLote}` : '');
+      (estadoLote ? `  ·  ${t('loteEstado')}: ${estadoLote}` : '') +
+      (retencion ? `  ·  ${retencion}` : '');
 
     const chips = nav.querySelector('.lote-chips');
     chips.innerHTML = items.map((it, i) => {
@@ -1848,6 +1868,7 @@ function toast(msg) {
     try {
       const data = await fetchLote(loteState.id);
       loteState.lote = data.lote;
+      loteState.almacenamiento = data.almacenamiento || null;
       loteState.items = Array.isArray(data.items) ? data.items : [];
       if (opts.mostrarInicial) {
         let preferido = loteState.items.findIndex(i => i.estado === 'listo');

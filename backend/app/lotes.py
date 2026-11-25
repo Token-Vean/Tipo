@@ -36,8 +36,11 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 import uuid
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -75,15 +78,18 @@ ZIP_MAX_RATIO = max(2, int(os.getenv("TIPO_LOTE_ZIP_MAX_RATIO", "100")))
 
 # Almacenamiento persistente (auditoría 2026-10).
 # - Cuota de disco por usuario sumando todos sus lotes (originales + resultados).
-# - Retención opcional: los lotes finalizados o cancelados con más de N días se
-#   borran solos (0 = desactivado, comportamiento anterior).
+# - Retención: los lotes finalizados o cancelados con más de N días se borran
+#   solos (por defecto 30; 0 = sin límite). Se aplica al arrancar, al crear un
+#   lote y cada INTERVALO_PURGA_SEGUNDOS mientras el worker está en reposo.
 # - Originales: en modo incógnito se borran siempre en cuanto el libro termina;
-#   en modo normal se conservan salvo TIPO_LOTE_CONSERVAR_ORIGINALES=false.
+#   en modo normal también, salvo TIPO_LOTE_CONSERVAR_ORIGINALES=true
+#   (privacidad por defecto desde 0.3.1: antes se conservaban).
 #   Las exportaciones usan solo result.json, así que borrar originales de un
 #   libro ya terminado no afecta a nada que ofrezca la aplicación.
 MAX_BYTES_USUARIO = int(os.getenv("TIPO_LOTE_MAX_BYTES_USUARIO", str(10 * 1024 * 1024 * 1024)))  # 10 GB
-RETENCION_DIAS = max(0, int(os.getenv("TIPO_LOTE_RETENCION_DIAS", "0")))
-CONSERVAR_ORIGINALES = os.getenv("TIPO_LOTE_CONSERVAR_ORIGINALES", "true").strip().lower() in VALORES_TRUE
+RETENCION_DIAS = max(0, int(os.getenv("TIPO_LOTE_RETENCION_DIAS", "30")))
+CONSERVAR_ORIGINALES = os.getenv("TIPO_LOTE_CONSERVAR_ORIGINALES", "false").strip().lower() in VALORES_TRUE
+INTERVALO_PURGA_SEGUNDOS = max(60, int(os.getenv("TIPO_LOTE_INTERVALO_PURGA_SEGUNDOS", str(6 * 3600))))
 _TROZO_SUBIDA = 1024 * 1024
 _NOMBRE_ZIP_TEMPORAL = "_subida.zip.tmp"
 
@@ -100,12 +106,31 @@ _worker_lock = asyncio.Lock()
 # Esquema SQLite
 # =============================================================================
 
+# El esquema se prepara una vez por ruta de base de datos (y de nuevo si el
+# fichero desaparece), no en cada consulta: el worker de lotes consulta la
+# cola cada pocos segundos y el frontend sondea el progreso del lote.
+_esquemas_listos: set[str] = set()
+_esquemas_lock = threading.Lock()
+
+
 def _conexion() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH), timeout=10, isolation_level=None)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    ruta = Path(DB_PATH)
+    clave = str(ruta)
+    preparar = clave not in _esquemas_listos or not ruta.exists()
+    if preparar:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(clave, timeout=10, isolation_level=None)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        if preparar:
+            with _esquemas_lock:
+                conn.execute("PRAGMA journal_mode=WAL")
+                _ensure_schema(conn)
+                _esquemas_listos.add(clave)
+    except BaseException:
+        conn.close()
+        raise
     return conn
 
 
@@ -156,10 +181,16 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS ix_lote_items_estado ON lote_items(estado)")
 
 
-def _db() -> sqlite3.Connection:
+@contextmanager
+def _db() -> Iterator[sqlite3.Connection]:
+    """Conexión SQLite de un solo uso, cerrada siempre al salir del bloque
+    (el gestor de contexto de sqlite3.Connection no la cierra)."""
     conn = _conexion()
-    _ensure_schema(conn)
-    return conn
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def _ahora() -> str:
@@ -259,6 +290,10 @@ def _extraer_zip_libro(fuente_zip: bytes | Path, destino: Path) -> list[Path]:
             for inf in infos:
                 if inf.is_dir():
                     continue
+                if inf.flag_bits & 0x1:
+                    # zf.open() lanzaría RuntimeError (500); es un error de
+                    # entrada del usuario y se informa como tal.
+                    raise ErrorValidacion("El ZIP está cifrado con contraseña; súbalo sin cifrar.")
                 if inf.file_size > ZIP_MAX_DESCOMPRIMIDO:
                     raise ErrorValidacion("Entrada de ZIP supera el tamaño descomprimido permitido.")
                 total_descomprimido += inf.file_size
@@ -292,6 +327,9 @@ def _extraer_zip_libro(fuente_zip: bytes | Path, destino: Path) -> list[Path]:
             return rutas
     except zipfile.BadZipFile as exc:
         raise ErrorValidacion("Archivo ZIP corrupto o no válido.") from exc
+    except NotImplementedError as exc:
+        # Métodos de compresión que zipfile no admite (p. ej. Deflate64).
+        raise ErrorValidacion("El ZIP usa un método de compresión no admitido.") from exc
 
 
 # =============================================================================
@@ -858,9 +896,18 @@ async def _bucle_worker() -> None:
     """Bucle principal: coge un item_id de la cola, lo procesa, y vuelve."""
     while True:
         try:
-            item_id = await _cola.get()
+            item_id = await asyncio.wait_for(_cola.get(), timeout=INTERVALO_PURGA_SEGUNDOS)
         except asyncio.CancelledError:
             raise
+        except TimeoutError:
+            # Sin trabajo pendiente: buen momento para aplicar la retención,
+            # de modo que un servicio que lleva días encendido no dependa de
+            # que alguien cree un lote nuevo o reinicie para purgar.
+            try:
+                await asyncio.to_thread(purgar_lotes_caducados)
+            except Exception:  # noqa: BLE001
+                logger.exception("No se pudo aplicar la retención periódica de lotes")
+            continue
         try:
             await _procesar_item(item_id)
         except asyncio.CancelledError:
@@ -937,7 +984,11 @@ async def _procesar_item(item_id: str) -> None:
     try:
         for idx, ruta in enumerate(ficheros):
             contenido = await asyncio.to_thread(ruta.read_bytes)
-            sha256 = hashlib.sha256(contenido).hexdigest() if INCLUIR_HASH else None
+            sha256 = (
+                hashlib.sha256(contenido).hexdigest()
+                if INCLUIR_HASH and not lote["incognito"]
+                else None
+            )
             nombre_real = ruta.name.split("__", 1)[1] if "__" in ruta.name else ruta.name
             etiqueta = item["etiqueta"] or f"imagen_{idx + 1}"
             try:
@@ -999,21 +1050,26 @@ async def _procesar_item(item_id: str) -> None:
         from . import exportadores as _exp
         marc21_lineas = _exp.generar_marc21_texto(campos_dict, lote["idioma_salida"])
         marc21_texto = _exp.marc21_a_texto_plano(marc21_lineas)
+        documento = {
+            "nombre": conjunto.nombre_original,
+            "tipo_mime": conjunto.tipo_mime,
+            "tamano_bytes": conjunto.tamano_bytes,
+            "paginas": conjunto.paginas,
+            "ruta_procesamiento": conjunto.ruta,
+            "archivos": [dict(a.__dict__) for a in conjunto.archivos],
+            "cobertura_zonas": [dict(c) for c in conjunto.cobertura],
+        }
+        if lote["incognito"]:
+            from .api import anonimizar_documento  # importación tardía
+            documento = anonimizar_documento(documento)
         payload = {
             "peticion": item_id,
             "lote_id": item["lote_id"],
             "idioma_salida": lote["idioma_salida"],
             "modelo": lote["modelo"],
             "version_tipo": APP_VERSION,
-            "documento": {
-                "nombre": conjunto.nombre_original,
-                "tipo_mime": conjunto.tipo_mime,
-                "tamano_bytes": conjunto.tamano_bytes,
-                "paginas": conjunto.paginas,
-                "ruta_procesamiento": conjunto.ruta,
-                "archivos": [a.__dict__ for a in conjunto.archivos],
-                "cobertura_zonas": conjunto.cobertura,
-            },
+            "incognito": bool(lote["incognito"]),
+            "documento": documento,
             "auditoria": ficha,
             "isbd": isbd,
             "marc21_lineas": marc21_lineas,

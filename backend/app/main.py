@@ -25,10 +25,15 @@ from .api import CabecerasSeguridad, LimiteCuerpoPeticion
 from .csrf import ProteccionCSRF
 from .auth import ProteccionAutenticacion
 from .local_access import ProteccionAccesoLocal
+from .temporales import preparar_directorio_temporal
 from .version import APP_NAME, APP_VERSION
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+# Antes de aceptar peticiones: las subidas grandes se vuelcan a disco en el
+# volumen de datos, no al /tmp en RAM (ver temporales.py).
+preparar_directorio_temporal()
 
 
 @asynccontextmanager
@@ -43,6 +48,10 @@ async def lifespan(_app: FastAPI):
             "Fallo en la recuperación de lotes; el worker arrancará igualmente"
         )
     await lotes.iniciar_worker_si_inactivo()
+    try:
+        await asyncio.to_thread(auth.purgar_eventos_antiguos)
+    except Exception:  # noqa: BLE001
+        logger.exception("No se pudo aplicar la retención de eventos de seguridad")
     try:
         yield
     finally:
@@ -89,7 +98,10 @@ app.include_router(lotes_api.router, prefix="/api")
 
 @app.get("/api/estado")
 async def estado():
-    return bootstrap.estado
+    # "aplicacion" permite al panel de Windows y a los instaladores distinguir
+    # Tipo de otra herramienta local que responda en el mismo puerto (PlumA
+    # usaba antes el 8082).
+    return {**bootstrap.estado, "aplicacion": APP_NAME}
 
 
 DIR_STATIC = Path("/app/static")

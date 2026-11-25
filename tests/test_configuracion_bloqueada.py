@@ -8,6 +8,7 @@ ser interpolaciones ${VAR:-...}.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,10 @@ BLOQUEADOS = {
     "ALLOW_REMOTE_OLLAMA": "false",
     "ALLOW_NETWORK_EXPOSURE": "false",
     "TIPO_AUTH_DISABLED": "false",
+    # Revisión de noviembre de 2026 (0.3.1-beta.1):
+    "INCLUIR_HASH_DOCUMENTO_AUDITORIA": "true",
+    "PERMITIR_APAGADO_UI": "true",
+    "TMPDIR": "/app/data/tmp",
 }
 
 
@@ -35,10 +40,12 @@ def test_control_de_seguridad_es_literal(servicio, variable, valor):
     )
 
 
-def test_imagen_ollama_fijada_por_digest_y_sin_variable():
+def test_imagen_ollama_fijada_y_sin_variable():
+    """Versión concreta (o digest), nunca latest ni una variable de .env."""
     imagen = COMPOSE["services"]["ollama"]["image"]
     assert "${" not in imagen
-    assert "@sha256:" in imagen
+    assert re.fullmatch(r"ollama/ollama(:\d+\.\d+\.\d+)?(@sha256:[0-9a-f]{64})?", imagen), imagen
+    assert ":" in imagen.split("/", 1)[1] or "@sha256:" in imagen
 
 
 def test_env_example_no_ofrece_variables_bloqueadas():

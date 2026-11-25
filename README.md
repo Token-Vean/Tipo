@@ -8,7 +8,7 @@
 
 > Sube uno o varios libros, revisa la propuesta bibliográfica y exporta los resultados en MARCXML, MARC21 texto, ISBD, JSON o CSV, sin enviar los documentos a servicios externos.
 
-**Versión actual:** `0.3.0-beta.2`  
+**Versión actual:** `0.3.1-beta.1`  
 **Estado:** beta, apta para entornos profesionales con supervisión.  
 **Ámbito:** monografía moderna impresa.  
 **Modelo de uso:** local-first, con Docker y Ollama.
@@ -114,13 +114,16 @@ El profesional debe revisar, corregir, completar y validar los resultados antes 
 
 ## Instalación rápida en Windows
 
-Para usuarios no técnicos, descargue y descomprima el `.zip` de la release. Después ejecute:
+Para usuarios no técnicos:
 
-```text
-Instalar Tipo.bat
-```
+1. Instale Docker Desktop y ábralo.
+2. Descargue `Tipo-…-windows.zip` de [Releases](https://github.com/Token-Vean/Tipo/releases). Antes de descomprimirlo: botón derecho > Propiedades > marque «Desbloquear» > Aceptar.
+3. Descomprímalo en un lugar fijo (por ejemplo, Documentos) y abra **«Tipo - Instalar y abrir»**.
+4. Pulse «Comprobar requisitos» e «Instalar / iniciar». Al terminar se abre el navegador para crear el usuario administrador.
 
-Se abrirá una ventana desde la que se puede:
+El paquete contiene solo el lanzador, la carpeta `ayuda` (instrucciones, notas de la versión y «Abrir sin VBScript» para equipos con VBScript desactivado) y la carpeta `programa`. Compruebe el ZIP con el `.sha256` publicado junto a él. Desde una copia del repositorio, el mismo panel se abre con `Tipo-Control.bat`.
+
+El panel permite:
 
 - instalar o actualizar Tipo;
 - iniciar la aplicación;
@@ -130,7 +133,19 @@ Se abrirá una ventana desde la que se puede:
 - consultar estado y logs;
 - recuperar el acceso de administrador si se pierde la contraseña.
 
-El instalador comprueba Docker Desktop. Si Docker no está instalado o no está arrancado, muestra instrucciones y detiene la instalación. También comprueba si hay Ollama nativo en `localhost:11434`. Si lo detecta, utiliza ese Ollama; si no lo detecta, usa Ollama dentro de Docker como instalación autocontenida.
+El instalador comprueba Docker Desktop. Si Docker no está instalado o no está arrancado, muestra instrucciones y detiene la instalación.
+
+### Ollama del equipo u Ollama en Docker
+
+- **Si hay un Ollama arrancado en el equipo** (`127.0.0.1:11434`), Tipo lo reutiliza con los modelos que ya tenga, siempre que sea la **versión 0.35.0 o posterior**. Todas las anteriores están afectadas por un aviso de seguridad (CVE-2026-103663, path traversal en la descarga de modelos).
+- **Si ese Ollama es anterior a 0.35.0** o no informa de su versión, el instalador se detiene y pide actualizarlo desde [ollama.com/download](https://ollama.com/download). Los modelos se conservan al actualizar. No se cambia a Ollama en Docker, porque el antiguo seguiría funcionando y vulnerable en el equipo.
+- **Si no hay Ollama en el equipo**, Tipo usa Ollama dentro de Docker (`ollama/ollama:0.40.17`, la misma versión que PlumA, con `OLLAMA_NO_CLOUD=1`) y descarga el modelo la primera vez.
+
+El backend repite la comprobación al arrancar y antes de cada análisis: si alguien sustituye el Ollama por uno antiguo con Tipo en marcha, no se le envía ningún documento.
+
+### Puerto
+
+Tipo se abre en `http://127.0.0.1:8769`. PlumA usa el `8082`, así que se pueden tener las dos abiertas a la vez. Si un `.env` antiguo de Tipo tenía `PUERTO=8082`, el instalador lo cambia a `8769`; no se admite el `8082`. Si el puerto está ocupado por otra aplicación, el instalador se detiene en lugar de arrancar a medias, y solo abre el navegador cuando quien responde es Tipo.
 
 ---
 
@@ -148,6 +163,19 @@ http://localhost:8769
 ```
 
 En macOS, Docker Desktop debe estar instalado y en ejecución. Ollama nativo es opcional; si no existe, Tipo puede usar Ollama dentro de Docker.
+
+### Linux y Ollama del equipo (nota de seguridad)
+
+En Linux, el instalador usa por defecto **Ollama dentro de Docker**, aunque haya un Ollama instalado en el equipo (si es anterior a 0.35.0, avisa de que conviene actualizarlo). Con Docker Engine, el contenedor de Tipo llega al equipo por la IP del puente de Docker (normalmente `172.17.0.1`), mientras que Ollama escucha por defecto solo en `127.0.0.1`.
+
+Si quiere usar su propio Ollama:
+
+1. Haga que escuche en el puente de Docker, **no en todas las interfaces**: `OLLAMA_HOST=172.17.0.1:11434`.
+2. Instale con `TIPO_PERFIL=external ./instalar.sh`. El instalador comprueba que ese Ollama es la versión 0.35.0 o posterior (en `http://172.17.0.1:11434`; otra dirección con `TIPO_OLLAMA_PUENTE`).
+
+**No use nunca `OLLAMA_HOST=0.0.0.0`.** Ollama no tiene autenticación: con ese valor, cualquier equipo de la red local puede usarlo, descargar modelos en él o leer lo que procesa.
+
+En cualquier sistema, si usa su propio Ollama, conviene activar el modo solo local que documenta Ollama (`OLLAMA_NO_CLOUD=1`) para que no pueda usar modelos en la nube. El Ollama que Tipo instala en Docker ya lo trae activado.
 
 ---
 
@@ -200,10 +228,26 @@ PUERTO=8769
 MODELO_BASE=gemma4:e4b
 MODELO_NOMBRE=gemma4:e4b
 TIPO_CREAR_MODELO_DERIVADO=false
-PERMITIR_APAGADO_UI=true
+TIPO_LOTE_RETENCION_DIAS=30
+TIPO_LOTE_CONSERVAR_ORIGINALES=false
 ```
 
-Los controles de seguridad (`TIPO_AUTH_DISABLED`, `ALLOW_REMOTE_OLLAMA`, `ALLOW_NETWORK_EXPOSURE`, el sandbox de parsers y la imagen de Ollama) están fijados en `docker-compose.yml` y no se leen de `.env`. Cambiarlos exige editar ese fichero.
+Los controles de seguridad (`TIPO_AUTH_DISABLED`, `ALLOW_REMOTE_OLLAMA`, `ALLOW_NETWORK_EXPOSURE`, el sandbox de parsers, `INCLUIR_HASH_DOCUMENTO_AUDITORIA`, `PERMITIR_APAGADO_UI`, `TMPDIR`, la imagen de Ollama y su modo solo local) están fijados en `docker-compose.yml` y no se leen de `.env`. Cambiarlos exige editar ese fichero.
+
+Los instaladores y el panel de Windows comprueban `.env` antes de usarlo: `PUERTO` debe ser un número, `PYTHON_IMAGE` solo admite `python:3.12-slim` (con o sin digest) y los nombres de modelo solo caracteres seguros. Si algo no cumple, se detienen con un mensaje.
+
+### Conservación de lo que se sube
+
+Desde `0.3.1-beta.1`, por defecto:
+
+- Los documentos originales de un lote se borran en cuanto cada libro termina. Para conservarlos: `TIPO_LOTE_CONSERVAR_ORIGINALES=true`.
+- Los lotes terminados o cancelados se borran a los **30 días** (`TIPO_LOTE_RETENCION_DIAS`; `0` = sin límite). Para un aula o un equipo compartido se recomienda `7`. La interfaz muestra el plazo en cada lote.
+- El registro de eventos de seguridad se purga a los 90 días (`TIPO_EVENTOS_RETENCION_DIAS`).
+- En **modo incógnito**, la respuesta y la exportación JSON no llevan los nombres ni las huellas SHA-256 de los ficheros (se muestran como `archivo_1`, `archivo_2`…). En un lote incógnito los originales se borran al terminar cada libro; el resultado se guarda hasta que caduque o se borre el lote.
+
+Si actualiza desde una versión anterior y su `.env` tenía `TIPO_LOTE_RETENCION_DIAS=0` y `TIPO_LOTE_CONSERVAR_ORIGINALES=true` (los valores de `.env.example` hasta ahora), esos valores se siguen respetando: cámbielos a mano si quiere el nuevo comportamiento.
+
+Desinstalar borra los datos de Tipo guardados en Docker (usuarios, lotes, documentos y resultados).
 
 Variables opcionales para procesamiento por lotes:
 
@@ -217,7 +261,9 @@ TIPO_LOTE_ZIP_MAX_DESCOMPRIMIDO=209715200
 TIPO_LOTE_ZIP_MAX_RATIO=100
 ```
 
-La lista desplegable de modelos muestra los modelos ya descargados en Ollama. La imagen Docker de Ollama está fijada por digest en `.env.example` y `docker-compose.yml`. En Windows, el instalador resuelve automáticamente la imagen base `python:3.12-slim` a digest y la guarda en `.env` antes de construir la imagen, sin intervención del usuario final.
+`OLLAMA_NUM_CTX` (32768 por defecto) es el máximo de la ventana de contexto: Tipo usa en cada documento el tramo más pequeño en el que cabe la petición y, si las zonas no caben, envía su principio y su final y lo indica en las advertencias de la propuesta.
+
+La lista desplegable de modelos muestra los modelos ya descargados en Ollama. La imagen Docker de Ollama está fijada por versión en `docker-compose.yml` (no se lee de `.env`). Para fijarla además por digest se usa `scripts/actualizar_ollama.sh <versión>` (o `.ps1`), que comprueba la versión de la imagen y rechaza las anteriores a 0.35.0. En Windows, el instalador resuelve automáticamente la imagen base `python:3.12-slim` a digest y la guarda en `.env` antes de construir la imagen, sin intervención del usuario final.
 
 ---
 

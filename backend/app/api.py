@@ -28,6 +28,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from . import auditoria, bibliografico, extractor, llm, router as router_entrada
 from .router import ErrorValidacion
+from .auth import _require_admin
+from .delimitadores import etiqueta_segura
 from .local_access import exposicion_red_permitida
 from .version import APP_VERSION
 
@@ -351,7 +353,10 @@ async def _apagar_proceso_app() -> None:
 
 
 @router.post("/apagar")
-async def apagar_desde_interfaz():
+async def apagar_desde_interfaz(request: Request):
+    # Solo un administrador puede detener el servicio: un usuario normal
+    # no debe poder cortar el trabajo (y los lotes en curso) del resto.
+    _require_admin(request)
     if exposicion_red_permitida():
         raise HTTPException(
             403,
@@ -426,7 +431,10 @@ def _fusionar_documentos(docs: list[tuple[router_entrada.DocumentoProcesado, str
         cob["archivo"] = doc.nombre_original
         cobertura.append(cob)
         if doc.entrada.texto:
-            textos.append(f"### Fuente: {etiqueta} — {doc.nombre_original}\n{doc.entrada.texto}")
+            textos.append(
+                f"### Fuente: {etiqueta_segura(etiqueta)} — {etiqueta_segura(doc.nombre_original)}\n"
+                f"{doc.entrada.texto}"
+            )
         if doc.entrada.imagenes:
             # El router ya etiqueta cada imagen con su zona y página cuando
             # procede (zonas.etiquetas_para_indices). Se conserva esa etiqueta
@@ -484,7 +492,13 @@ async def describir(
         for archivo, etiqueta in zip(ficheros, etiquetas_lista, strict=False):
             nombre_seguro = _sanear_texto_corto(archivo.filename or "sin_nombre", 180, "sin_nombre")
             contenido = await archivo.read()
-            sha256 = hashlib.sha256(contenido).hexdigest() if INCLUIR_HASH_DOCUMENTO_AUDITORIA else None
+            # En incógnito no se calcula la huella: un SHA-256 identifica el
+            # fichero tanto como su nombre.
+            sha256 = (
+                hashlib.sha256(contenido).hexdigest()
+                if INCLUIR_HASH_DOCUMENTO_AUDITORIA and not incognito_modo
+                else None
+            )
             try:
                 # procesar() es síncrono (sandbox con espera activa de hasta
                 # SANDBOX_TIMEOUT_SEGUNDOS): en un hilo para no congelar el
@@ -492,7 +506,7 @@ async def describir(
                 doc = await asyncio.to_thread(router_entrada.procesar, contenido, nombre_seguro)
                 bytes_imagenes_acumulados = comprobar_presupuesto_imagenes(bytes_imagenes_acumulados, doc)
             except ErrorValidacion as e:
-                _log_peticion("archivo_validacion_fallida", peticion_id, nombre=nombre_seguro, error=str(e))
+                _log_peticion("archivo_validacion_fallida", peticion_id, nombre=nombre_seguro, error=str(e), _incognito=incognito_modo)
                 raise HTTPException(400, f"{nombre_seguro or 'archivo'}: {e}") from None
             except Exception as err:
                 logger.exception("[%s] Error inesperado procesando archivo", peticion_id)
@@ -523,18 +537,63 @@ async def describir(
     from . import exportadores as _exp
     marc21_lineas = _exp.generar_marc21_texto(campos_dict)
     marc21_texto = _exp.marc21_a_texto_plano(marc21_lineas)
+    documento = {
+        "nombre": conjunto.nombre_original,
+        "tipo_mime": conjunto.tipo_mime,
+        "tamano_bytes": conjunto.tamano_bytes,
+        "paginas": conjunto.paginas,
+        "ruta_procesamiento": conjunto.ruta,
+        "archivos": [dict(a.__dict__) for a in conjunto.archivos],
+        "cobertura_zonas": [dict(c) for c in conjunto.cobertura],
+    }
+    if incognito_modo:
+        documento = anonimizar_documento(documento)
     return {
         "peticion": peticion_id,
         "idioma_salida": idioma_salida,
         "modelo": modelo_seleccionado,
         "version_tipo": APP_VERSION,
-        "documento": {"nombre": conjunto.nombre_original, "tipo_mime": conjunto.tipo_mime, "tamano_bytes": conjunto.tamano_bytes, "paginas": conjunto.paginas, "ruta_procesamiento": conjunto.ruta, "archivos": [a.__dict__ for a in conjunto.archivos], "cobertura_zonas": conjunto.cobertura},
+        "incognito": incognito_modo,
+        "documento": documento,
         "auditoria": ficha_tecnica,
         "isbd": isbd,
         "marc21_lineas": marc21_lineas,
         "marc21_texto": marc21_texto,
         "propuesta": propuesta.to_dict(),
     }
+
+
+def anonimizar_documento(documento: dict[str, Any]) -> dict[str, Any]:
+    """Quita del bloque `documento` de la respuesta lo que identifica los
+    ficheros (nombres y huellas) en modo incógnito.
+
+    La respuesta acaba en el navegador y, si el usuario exporta a JSON, en un
+    fichero. Las etiquetas que elige el usuario se conservan (las escribe él
+    mismo para orientarse); los nombres de archivo se sustituyen por
+    `archivo_1`, `archivo_2`…
+    """
+    anon = dict(documento)
+    sustitutos: dict[str, str] = {}
+    archivos = []
+    for i, archivo in enumerate(documento.get("archivos") or [], start=1):
+        a = dict(archivo)
+        sustituto = f"archivo_{i}"
+        if a.get("nombre"):
+            sustitutos[str(a["nombre"])] = sustituto
+        a["nombre"] = sustituto
+        a["sha256"] = None
+        archivos.append(a)
+    anon["archivos"] = archivos
+    cobertura = []
+    for c in documento.get("cobertura_zonas") or []:
+        c = dict(c)
+        if "archivo" in c:
+            c["archivo"] = sustitutos.get(str(c["archivo"]), "archivo")
+        cobertura.append(c)
+    anon["cobertura_zonas"] = cobertura
+    nombres = [a["nombre"] for a in archivos]
+    anon["nombre"] = ", ".join(nombres[:3]) + ("..." if len(nombres) > 3 else "") if nombres else "conjunto"
+    return anon
 
 
 def _construir_filtro(modo: str, campos_str: str | None, esquema: extractor.Esquema) -> set[str] | None:

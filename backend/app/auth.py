@@ -30,6 +30,8 @@ import secrets
 import sqlite3
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +51,11 @@ AUTH_DISABLED = os.getenv("TIPO_AUTH_DISABLED", "false").strip().lower() in VALO
 COOKIE_NAME = os.getenv("TIPO_SESSION_COOKIE", "tipo_session")
 COOKIE_SECURE = os.getenv("TIPO_COOKIE_SECURE", "false").strip().lower() in VALORES_TRUE
 SESSION_TTL_SECONDS = max(900, int(os.getenv("TIPO_SESSION_TTL_SECONDS", str(12 * 60 * 60))))
+# Tope absoluto: la renovación deslizante no puede alargar una sesión más
+# allá de este plazo desde el inicio de sesión (por defecto, 7 días).
+SESSION_MAX_SECONDS = max(SESSION_TTL_SECONDS, int(os.getenv("TIPO_SESSION_MAX_SECONDS", str(7 * 24 * 60 * 60))))
+# Retención de la tabla security_events (intentos de acceso, altas, bajas…).
+EVENTOS_RETENCION_DIAS = max(1, int(os.getenv("TIPO_EVENTOS_RETENCION_DIAS", "90")))
 PBKDF2_ITERATIONS = max(200_000, int(os.getenv("TIPO_PBKDF2_ITERATIONS", "600000")))
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9._@-]{3,64}$")
 PASSWORD_MIN_LENGTH = int(os.getenv("TIPO_PASSWORD_MIN_LENGTH", "10"))
@@ -125,12 +132,33 @@ def _ensure_data_dir() -> None:
         pass
 
 
+# El esquema (CREATE TABLE IF NOT EXISTS, permisos del fichero, migración de
+# users.json y modo WAL, que se guarda en el propio fichero) se prepara una
+# sola vez por ruta de base de datos, no en cada petición. Si el fichero
+# desaparece con la aplicación en marcha, se vuelve a preparar.
+_esquemas_listos: set[str] = set()
+_esquemas_lock = threading.Lock()
+
+
 def _connect() -> sqlite3.Connection:
-    _ensure_data_dir()
-    conn = sqlite3.connect(str(_db_path()), timeout=10, isolation_level=None)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    ruta = _db_path()
+    clave = str(ruta)
+    preparar = clave not in _esquemas_listos or not ruta.exists()
+    if preparar:
+        _ensure_data_dir()
+    conn = sqlite3.connect(clave, timeout=10, isolation_level=None)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        if preparar:
+            with _esquemas_lock:
+                conn.execute("PRAGMA journal_mode=WAL")
+                _ensure_schema(conn)
+                _migrate_legacy_json_if_needed(conn)
+                _esquemas_listos.add(clave)
+    except BaseException:
+        conn.close()
+        raise
     return conn
 
 
@@ -234,11 +262,20 @@ def _migrate_legacy_json_if_needed(conn: sqlite3.Connection) -> None:
         logger.warning("No se pudo migrar users.json a SQLite: %s", exc)
 
 
-def _db() -> sqlite3.Connection:
+@contextmanager
+def _db() -> Iterator[sqlite3.Connection]:
+    """Conexión SQLite de un solo uso.
+
+    El gestor de contexto de sqlite3.Connection solo hace commit/rollback; no
+    cierra la conexión, que quedaba en manos del recolector. Aquí se cierra
+    siempre al salir del bloque.
+    """
     conn = _connect()
-    _ensure_schema(conn)
-    _migrate_legacy_json_if_needed(conn)
-    return conn
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def _empty_store() -> dict[str, Any]:
@@ -289,6 +326,7 @@ def _save_store(data: dict[str, Any]) -> None:
                         ),
                     )
                 conn.execute("COMMIT")
+        _invalidar_cache_usuarios()
     except PermissionError as exc:
         logger.exception("No se puede escribir el almacén local SQLite en %s", _db_path())
         raise RuntimeError(
@@ -529,11 +567,39 @@ def _crear_sesion(username: str) -> str:
 def _purgar_sesiones(now: float | None = None) -> None:
     now = now or time.time()
     for token, data in list(_sessions.items()):
-        if float(data.get("expires", 0)) < now:
+        caducada = float(data.get("expires", 0)) < now
+        agotada = now - float(data.get("created", now)) > SESSION_MAX_SECONDS
+        if caducada or agotada:
             _sessions.pop(token, None)
 
 
+def _revocar_token(token: str | None) -> None:
+    if not token:
+        return
+    with _sessions_lock:
+        _sessions.pop(token, None)
+
+
+def purgar_eventos_antiguos() -> int:
+    """Borra de security_events lo anterior a EVENTOS_RETENCION_DIAS.
+
+    La tabla guarda nombres de usuario intentados (a veces, una contraseña
+    escrita por error en el campo de usuario) y no necesita historia
+    indefinida en una instalación local. Se llama al arrancar."""
+    corte = time.strftime(
+        "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - EVENTOS_RETENCION_DIAS * 86400)
+    )
+    try:
+        with _users_lock, _db() as conn:
+            cur = conn.execute("DELETE FROM security_events WHERE created_at < ?", (corte,))
+            return cur.rowcount or 0
+    except (sqlite3.Error, RuntimeError):
+        logger.warning("No se pudieron purgar eventos de seguridad antiguos", exc_info=True)
+        return 0
+
+
 def _cerrar_sesiones_usuario(username: str, *, excepto_token: str | None = None) -> None:
+    _invalidar_cache_usuarios(username)
     with _sessions_lock:
         for token, data in list(_sessions.items()):
             if token == excepto_token:
@@ -553,6 +619,51 @@ def _get_user(conn: sqlite3.Connection, username: str) -> dict[str, Any] | None:
     return _row_to_user(row)
 
 
+# Caché breve de rol y estado por usuario. Cada petición autenticada consultaba
+# SQLite (abrir conexión, PRAGMA, SELECT) solo para confirmar que el usuario
+# sigue activo. Los cambios hechos por la propia aplicación (desactivar,
+# borrar, cambiar o resetear contraseña) invalidan la caché al momento; el
+# plazo solo acota los cambios hechos desde fuera del proceso (tipo-auth en
+# otro contenedor). Se indexa por ruta de base de datos y usuario.
+USUARIO_CACHE_SEGUNDOS = max(0.0, float(os.getenv("TIPO_USUARIO_CACHE_SEGUNDOS", "5")))
+_usuarios_cache: dict[tuple[str, str], tuple[float, dict[str, Any] | None]] = {}
+_usuarios_cache_lock = threading.Lock()
+
+
+def _invalidar_cache_usuarios(username: str | None = None) -> None:
+    with _usuarios_cache_lock:
+        if username is None:
+            _usuarios_cache.clear()
+            return
+        for clave in [c for c in _usuarios_cache if c[1] == username]:
+            _usuarios_cache.pop(clave, None)
+
+
+def _usuario_activo(username: str) -> dict[str, Any] | None:
+    """{"role": ...} si el usuario existe y está activo; None si no."""
+    clave = (str(_db_path()), username)
+    ahora = time.monotonic()
+    if USUARIO_CACHE_SEGUNDOS > 0:
+        with _usuarios_cache_lock:
+            entrada = _usuarios_cache.get(clave)
+            if entrada and entrada[0] > ahora:
+                return entrada[1]
+    with _users_lock:
+        with _db() as conn:
+            user = _get_user(conn, username)
+    activo = (
+        {"role": user.get("role", "user")}
+        if isinstance(user, dict) and not user.get("disabled")
+        else None
+    )
+    if USUARIO_CACHE_SEGUNDOS > 0:
+        with _usuarios_cache_lock:
+            if len(_usuarios_cache) > 1000:
+                _usuarios_cache.clear()
+            _usuarios_cache[clave] = (ahora + USUARIO_CACHE_SEGUNDOS, activo)
+    return activo
+
+
 def usuario_desde_request(request: Request) -> dict[str, Any] | None:
     if AUTH_DISABLED:
         return {"username": "local", "role": "admin"}
@@ -565,17 +676,20 @@ def usuario_desde_request(request: Request) -> dict[str, Any] | None:
         if not session:
             return None
         username = str(session.get("username"))
-        # Renovación deslizante de sesión durante uso activo.
-        session["expires"] = time.time() + SESSION_TTL_SECONDS
-    with _users_lock:
-        try:
-            with _db() as conn:
-                user = _get_user(conn, username)
-        except RuntimeError:
-            return None
-        if not isinstance(user, dict) or user.get("disabled"):
-            return None
-        return {"username": username, "role": user.get("role", "user")}
+        # Renovación deslizante de sesión durante uso activo, sin pasar del
+        # tope absoluto contado desde el inicio de sesión.
+        ahora = time.time()
+        session["expires"] = min(
+            ahora + SESSION_TTL_SECONDS,
+            float(session.get("created", ahora)) + SESSION_MAX_SECONDS,
+        )
+    try:
+        activo = _usuario_activo(username)
+    except (RuntimeError, sqlite3.Error):
+        return None
+    if activo is None:
+        return None
+    return {"username": username, "role": activo["role"]}
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -730,6 +844,9 @@ async def login(payload: LoginPayload, response: Response, request: Request):
     _check_login_lock(request, username)
     user = await asyncio.to_thread(_login_sync, request, username, payload.password)
     _clear_login_failures(request, username)
+    # Un inicio de sesión nuevo invalida el token que este navegador tuviera
+    # antes (evita que sobrevivan sesiones previas, p. ej. de otro usuario).
+    _revocar_token(request.cookies.get(COOKIE_NAME))
     token = _crear_sesion(username)
     _set_session_cookie(response, token)
     return {"ok": True, "user": {"username": username, "role": user.get("role", "user")}}
@@ -856,6 +973,7 @@ async def cambiar_estado_usuario(username: str, payload: EstadoUsuarioPayload, r
             now = _now_iso()
             conn.execute("UPDATE users SET disabled = ?, updated_at = ? WHERE username = ?", (1 if payload.disabled else 0, now, username))
             _record_event(conn, "user_disabled" if payload.disabled else "user_enabled", actor=admin.get("username"), target=username)
+    _invalidar_cache_usuarios(username)
     if payload.disabled:
         _cerrar_sesiones_usuario(username)
     return {"ok": True, "user": {"username": username, "disabled": bool(payload.disabled)}}

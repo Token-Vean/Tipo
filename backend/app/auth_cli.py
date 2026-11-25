@@ -37,6 +37,14 @@ def reset_admin(args) -> int:
     with auth._users_lock:
         store = auth._load_store()
         users = store.setdefault("users", {})
+        if username not in users:
+            # Igual que el alta desde la API: un usuario nuevo no hereda lotes
+            # que hubieran quedado a ese nombre de un usuario borrado antes.
+            try:
+                auth._purgar_lotes_previos(username)
+            except Exception as exc:  # noqa: BLE001 — HTTPException fuera de la API
+                print(f"No se pudo preparar el usuario: {getattr(exc, 'detail', exc)}")
+                return 1
         user = users.setdefault(username, {})
         user.update({
             "password_hash": auth._hash_password(password),

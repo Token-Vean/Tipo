@@ -127,6 +127,12 @@ async def obtener_lote_endpoint(request: Request, lote_id: str):
     return {
         "lote": lote.to_dict(),
         "items": [it.to_dict() for it in items],
+        # Se muestra en la interfaz para que el usuario sepa cuánto tiempo
+        # se guarda lo que ha subido (privacidad por defecto).
+        "almacenamiento": {
+            "retencion_dias": lotes.RETENCION_DIAS,
+            "conserva_originales": lotes.CONSERVAR_ORIGINALES,
+        },
     }
 
 
