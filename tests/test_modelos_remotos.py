@@ -43,10 +43,11 @@ class _Respuesta:
 class _Ollama:
     """Ollama simulado: responde a /api/tags y /api/show y anota las llamadas."""
 
-    def __init__(self, *, tags=None, show=(200, {}), error=None):
+    def __init__(self, *, tags=None, show=(200, {}), error=None, version="0.40.17"):
         self.tags = tags or []
         self.show = show
         self.error = error
+        self.version = version
         self.llamadas: list[tuple[str, str, object]] = []
 
     def cliente(self, timeout):
@@ -60,6 +61,8 @@ class _Ollama:
 
     async def get(self, url):
         self.llamadas.append(("GET", url, None))
+        if url.endswith("/api/version"):
+            return _Respuesta(200, {"version": self.version})
         return _Respuesta(200, {"models": self.tags})
 
     async def post(self, url, json=None):
@@ -133,6 +136,15 @@ def test_generar_no_envia_el_documento_a_un_modelo_remoto(monkeypatch):
     ollama = _instalar(monkeypatch, _Ollama(show=(200, {"remote_host": "https://ollama.com:443"})))
     with pytest.raises(RuntimeError, match="servidor externo"):
         asyncio.run(llm.generar("TEXTO CONFIDENCIAL DEL DOCUMENTO", modelo="mi-modelo:latest"))
-    # Solo se ha consultado /api/show: el texto no ha salido hacia Ollama.
-    assert [(m, u.rsplit("/api/", 1)[1]) for m, u, _ in ollama.llamadas] == [("POST", "show")]
+    # Solo se han consultado la versión y /api/show: el texto no ha salido.
+    assert [(m, u.rsplit("/api/", 1)[1]) for m, u, _ in ollama.llamadas] == [("GET", "version"), ("POST", "show")]
+    assert "CONFIDENCIAL" not in repr(ollama.llamadas)
+
+
+def test_generar_no_envia_el_documento_a_un_ollama_antiguo(monkeypatch):
+    ollama = _instalar(monkeypatch, _Ollama(show=(200, {"details": {}}), version="0.21.2"))
+    with pytest.raises(RuntimeError, match="CVE-2026-103663"):
+        asyncio.run(llm.generar("TEXTO CONFIDENCIAL DEL DOCUMENTO", modelo="gemma4:e2b"))
+    # Solo se ha consultado la versión: ni /api/show ni /api/generate.
+    assert [(m, u.rsplit("/api/", 1)[1]) for m, u, _ in ollama.llamadas] == [("GET", "version")]
     assert "CONFIDENCIAL" not in repr(ollama.llamadas)
