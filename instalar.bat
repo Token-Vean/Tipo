@@ -100,10 +100,19 @@ if not defined OLLAMA_EXE if exist "%ProgramFiles%\Ollama\ollama.exe" set "OLLAM
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri 'http://127.0.0.1:11434/api/tags' -UseBasicParsing -TimeoutSec 3; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
 if not errorlevel 1 (
+    echo    Ollama instalado y arrancado ^(127.0.0.1:11434^). Comprobando su version...
+    REM Solo se reutiliza un Ollama de version segura: 0.35.0 o posterior.
+    REM Si es antiguo se pide actualizarlo: no se cambia a Docker, porque el
+    REM Ollama antiguo seguiria funcionando y vulnerable en el equipo.
+    powershell -NoProfile -ExecutionPolicy Bypass -File "tools\windows\comprobar-ollama.ps1"
+    if errorlevel 1 (
+        echo.
+        pause
+        exit /b 1
+    )
     set PERFIL=external
     set APP_SERVICE=app-external
-    echo    OK - Ollama instalado y arrancado ^(127.0.0.1:11434^).
-    echo        Tipo usara tu instalacion local de Ollama.
+    echo        Tipo usara tu instalacion local de Ollama y sus modelos.
     echo        Recomendado: variable de entorno OLLAMA_NO_CLOUD=1 en tu cuenta de
     echo        Windows para que Ollama solo use modelos locales.
 ) else if defined OLLAMA_EXE (
@@ -121,6 +130,16 @@ REM 4. Puerto configurado
 REM -----------------------------------------------------------------------------
 echo.
 echo [4/10] Comprobando puerto de la aplicacion...
+
+REM Tipo usaba el 8082 hasta la 0.2; es el puerto fijo de PlumA. Un .env de
+REM entonces se pasa al 8769 para poder usar las dos a la vez.
+if exist .env (
+    findstr /b /x /c:"PUERTO=8082" .env >nul 2>&1
+    if not errorlevel 1 (
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "(Get-Content .env) -replace '^PUERTO=8082$', 'PUERTO=8769' | Set-Content .env"
+        echo    OK - Puerto cambiado de 8082, el de PlumA, a 8769.
+    )
+)
 
 REM Antes de usar ningun valor de .env se comprueba que es valido: PUERTO se
 REM inserta en ordenes de PowerShell y PYTHON_IMAGE decide la imagen base.
@@ -144,8 +163,14 @@ if errorlevel 1 (
     if not errorlevel 1 (
         echo    OK - Puerto !PUERTO! ocupado por Tipo ^(se reiniciara^).
     ) else (
-        echo    AVISO - El puerto !PUERTO! esta en uso por otra aplicacion.
-        echo            Tipo intentara arrancar igualmente. Si falla, revisa el panel de soporte.
+        echo.
+        echo    ERROR: el puerto !PUERTO! lo esta usando otra aplicacion ^(por ejemplo,
+        echo           otra herramienta de la suite^). Tipo no puede compartirlo.
+        echo           Cierra esa aplicacion o cambia PUERTO en el fichero .env a otro
+        echo           libre ^(nunca 8082, que es el de PlumA^) y vuelve a ejecutar.
+        echo.
+        pause
+        exit /b 1
     )
 )
 
@@ -313,7 +338,9 @@ set INTENTO=0
 
 :wait_loop
 set /a INTENTO+=1
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri 'http://!TIPO_LOCAL_HOST!:!PUERTO!/api/estado' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+REM Solo cuenta como listo si quien responde es Tipo: asi nunca se abre en el
+REM navegador otra aplicacion que estuviera en el mismo puerto.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri 'http://!TIPO_LOCAL_HOST!:!PUERTO!/api/estado' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200 -and (($r.Content | ConvertFrom-Json).aplicacion -eq 'Tipo')) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
 if not errorlevel 1 goto wait_ok
 
 "!DOCKER!" ps --filter "name=tipo-app" --filter "status=exited" --format "{{.Names}}" | findstr "tipo-app" >nul 2>&1

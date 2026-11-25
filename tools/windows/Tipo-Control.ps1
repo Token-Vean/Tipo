@@ -13,14 +13,14 @@ Set-Location $Root
 function Get-Port {
     # 8769 es el puerto de Tipo desde 0.3.0 (8082 es el de PlumA: con ese
     # valor por defecto el panel podia dar por arrancado Tipo cuando quien
-    # respondia era PlumA). Un valor no numerico en .env se ignora.
+    # respondia era PlumA). Un valor no numerico o el 8082 se ignoran.
     $port = "8769"
     $envFile = Join-Path $Root ".env"
     if (Test-Path $envFile) {
         $line = Get-Content $envFile -ErrorAction SilentlyContinue | Where-Object { $_ -match '^PUERTO=' } | Select-Object -First 1
         if ($line) {
             $valor = ($line -replace '^PUERTO=', '').Trim()
-            if ($valor -match '^[0-9]{2,5}$') { $port = $valor }
+            if ($valor -match '^[0-9]{2,5}$' -and $valor -ne '8082') { $port = $valor }
         }
     }
     return $port
@@ -146,6 +146,22 @@ function Test-DockerCompose {
 
 function Test-OllamaInstalled {
     return [bool](Get-OllamaExe)
+}
+
+# Debe coincidir con VERSION_MINIMA_OLLAMA de backend\app\llm.py: todas las
+# versiones anteriores a 0.35.0 están afectadas por CVE-2026-103663.
+$script:OllamaMinVersion = [version]'0.35.0'
+
+# Versión del Ollama del equipo como [version], o $null si no se puede leer.
+function Get-OllamaVersion {
+    try {
+        $r = Invoke-WebRequest -Uri "http://127.0.0.1:11434/api/version" -UseBasicParsing -TimeoutSec 2
+        $texto = ($r.Content | ConvertFrom-Json).version
+        if ($texto -match '^\s*v?(\d+)\.(\d+)\.(\d+)') {
+            return [version]("{0}.{1}.{2}" -f $Matches[1], $Matches[2], $Matches[3])
+        }
+    } catch {}
+    return $null
 }
 
 function Test-OllamaNative {
@@ -335,9 +351,19 @@ function Show-PrerequisitesHelp {
     $msg = "Requisitos de Tipo:`n`n" +
            "1. Docker Desktop instalado y arrancado. Es obligatorio.`n" +
            "   https://www.docker.com/products/docker-desktop/`n`n" +
-           "2. Ollama es opcional. Si no esta instalado, Tipo puede usar Ollama dentro de Docker.`n" +
-           "   https://ollama.com/download`n`n" +
-           "Tras instalar Docker, abre Docker Desktop y vuelve a ejecutar este panel."
+           "2. Ollama es opcional. Si no esta instalado, Tipo usa Ollama dentro de Docker.`n" +
+           "   Si esta instalado y arrancado, Tipo lo reutiliza con sus modelos, pero solo`n" +
+           "   si es la version $($script:OllamaMinVersion) o posterior (aviso de seguridad`n" +
+           "   CVE-2026-103663). Si es anterior, actualizalo desde https://ollama.com/download`n`n"
+    $v = Get-OllamaVersion
+    if ($null -ne $v) {
+        if ($v -lt $script:OllamaMinVersion) {
+            $msg += "Tu Ollama es la version $($v): ACTUALIZALO antes de instalar Tipo.`n`n"
+        } else {
+            $msg += "Tu Ollama es la version $($v): valida.`n`n"
+        }
+    }
+    $msg += "Tras instalar Docker, abre Docker Desktop y vuelve a ejecutar este panel."
     [System.Windows.Forms.MessageBox]::Show($msg, "Tipo - requisitos", "OK", "Information") | Out-Null
 }
 
@@ -359,8 +385,17 @@ function Update-Status {
     }
 
     if (Test-OllamaNative) {
-        $ollamaLabel.Text = "Ollama: instalado y arrancado"
-        $ollamaLabel.ForeColor = [System.Drawing.Color]::DarkGreen
+        $ollamaVersion = Get-OllamaVersion
+        if ($null -eq $ollamaVersion) {
+            $ollamaLabel.Text = "Ollama: version desconocida"
+            $ollamaLabel.ForeColor = [System.Drawing.Color]::DarkOrange
+        } elseif ($ollamaVersion -lt $script:OllamaMinVersion) {
+            $ollamaLabel.Text = "Ollama $($ollamaVersion): actualizalo"
+            $ollamaLabel.ForeColor = [System.Drawing.Color]::DarkRed
+        } else {
+            $ollamaLabel.Text = "Ollama $($ollamaVersion): arrancado"
+            $ollamaLabel.ForeColor = [System.Drawing.Color]::DarkGreen
+        }
     } elseif (Test-OllamaInstalled) {
         $ollamaLabel.Text = "Ollama: instalado, no arrancado"
         $ollamaLabel.ForeColor = [System.Drawing.Color]::DarkOrange

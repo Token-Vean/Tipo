@@ -36,6 +36,7 @@ foreach ($linea in Get-Content -LiteralPath $Ruta) {
     } elseif ($clave -eq "PUERTO") {
         $n = [int]$valor
         if ($n -lt 1024 -or $n -gt 65535) { $errores += "  - PUERTO debe estar entre 1024 y 65535." }
+        elseif ($n -eq 8082) { $errores += "  - PUERTO no puede ser 8082: es el puerto de PlumA. Use 8769, el de Tipo." }
     }
 }
 

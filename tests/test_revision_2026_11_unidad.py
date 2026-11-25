@@ -223,3 +223,129 @@ def test_valores_por_defecto_del_codigo_coinciden():
         assert lotes.RETENCION_DIAS == 30
     if "TIPO_LOTE_CONSERVAR_ORIGINALES" not in os.environ:
         assert lotes.CONSERVAR_ORIGINALES is False
+
+
+# ---------------------------------------------------------------------------
+# Versión mínima de Ollama (CVE-2026-103663: todas las anteriores a 0.35.0)
+# ---------------------------------------------------------------------------
+
+def _minima_en(fichero: str, patron: str) -> str:
+    texto = (ROOT / fichero).read_text(encoding="utf-8-sig")
+    coincidencia = re.search(patron, texto)
+    assert coincidencia, f"No se encuentra la versión mínima en {fichero}"
+    return coincidencia.group(1)
+
+
+def test_version_minima_de_ollama_coherente_en_todos_los_puntos():
+    from app import llm
+
+    minima = llm.texto_version(llm.VERSION_MINIMA_OLLAMA)
+    assert _minima_en("tools/windows/comprobar-ollama.ps1", r"\$VersionMinima = \[version\]'([\d.]+)'") == minima
+    assert _minima_en("tools/windows/Tipo-Control.ps1", r"\$script:OllamaMinVersion = \[version\]'([\d.]+)'") == minima
+    assert _minima_en("instalar.sh", r'VERSION_MINIMA_OLLAMA="([\d.]+)"') == minima
+
+
+def test_imagen_de_ollama_del_compose_cumple_la_minima():
+    from app import llm
+
+    imagen = COMPOSE["services"]["ollama"]["image"]
+    coincidencia = re.match(r"ollama/ollama:(\d+\.\d+\.\d+)", imagen)
+    assert coincidencia, f"La imagen de Ollama debe fijar una versión: {imagen}"
+    assert llm.parsear_version(coincidencia.group(1)) >= llm.VERSION_MINIMA_OLLAMA
+
+
+@pytest.mark.parametrize("texto,esperado", [
+    ("0.40.17", (0, 40, 17)),
+    ("v0.35.0", (0, 35, 0)),
+    ("0.40.17-rc3", (0, 40, 17)),
+    ("", None),
+    (None, None),
+    ("desconocida", None),
+])
+def test_parsear_version(texto, esperado):
+    from app import llm
+
+    assert llm.parsear_version(texto) == esperado
+
+
+class _RespuestaVersion:
+    def __init__(self, status_code, datos):
+        self.status_code = status_code
+        self._datos = datos
+
+    def json(self):
+        return self._datos
+
+
+class _OllamaVersion:
+    def __init__(self, status_code, datos):
+        self.respuesta = _RespuestaVersion(status_code, datos)
+        self.urls = []
+
+    def cliente(self, timeout):
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    async def get(self, url):
+        self.urls.append(url)
+        return self.respuesta
+
+
+def test_verificar_version_acepta_una_version_segura(monkeypatch):
+    import asyncio
+
+    from app import llm
+
+    ollama = _OllamaVersion(200, {"version": "0.40.17"})
+    monkeypatch.setattr(llm, "cliente_local", ollama.cliente)
+    assert asyncio.run(llm.verificar_version_ollama()) == "0.40.17"
+    assert ollama.urls == [f"{llm.OLLAMA_URL}/api/version"]
+
+
+@pytest.mark.parametrize("perfil,remedio", [("external", "Actualice Ollama"), ("bundled", "instalador")])
+def test_verificar_version_rechaza_un_ollama_antiguo(monkeypatch, perfil, remedio):
+    import asyncio
+
+    from app import llm
+
+    monkeypatch.setattr(llm, "cliente_local", _OllamaVersion(200, {"version": "0.21.2"}).cliente)
+    monkeypatch.setattr(llm, "PERFIL", perfil)
+    with pytest.raises(RuntimeError, match="CVE-2026-103663") as error:
+        asyncio.run(llm.verificar_version_ollama())
+    assert remedio in str(error.value)
+
+
+@pytest.mark.parametrize("status,datos", [(404, None), (200, {}), (200, {"version": "x"}), (200, "texto")])
+def test_verificar_version_falla_cerrado_si_no_se_puede_leer(monkeypatch, status, datos):
+    import asyncio
+
+    from app import llm
+
+    monkeypatch.setattr(llm, "cliente_local", _OllamaVersion(status, datos).cliente)
+    with pytest.raises(RuntimeError, match="No se pudo comprobar la versión"):
+        asyncio.run(llm.verificar_version_ollama())
+
+
+# ---------------------------------------------------------------------------
+# Puerto distinto del de PlumA (8082)
+# ---------------------------------------------------------------------------
+
+def test_puerto_por_defecto_distinto_del_de_plumA():
+    assert _env_example()["PUERTO"] == "8769"
+    for servicio in ("app", "app-external"):
+        puertos = COMPOSE["services"][servicio]["ports"]
+        assert puertos == ["127.0.0.1:${PUERTO:-8769}:8081"]
+
+
+def test_instaladores_y_panel_rechazan_el_8082():
+    validador = (ROOT / "tools/windows/validar-env.ps1").read_text(encoding="utf-8-sig")
+    assert "$n -eq 8082" in validador
+    instalador = (ROOT / "instalar.sh").read_text(encoding="utf-8")
+    assert "10#$valor == 8082" in instalador
+    panel = (ROOT / "tools/windows/Tipo-Control.ps1").read_text(encoding="utf-8-sig")
+    assert "$valor -ne '8082'" in panel

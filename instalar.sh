@@ -18,6 +18,44 @@ avisar() { echo "  ${AMAR}!${FIN} $1"; }
 fallar() { echo "  ${ROJO}✗${FIN} $1" >&2; exit 1; }
 nota()   { echo "    ${GRIS}$1${FIN}"; }
 
+# Versión mínima del Ollama del equipo para reutilizarlo. Debe coincidir con
+# VERSION_MINIMA_OLLAMA de backend/app/llm.py (lo comprueba un test). Todas
+# las versiones anteriores a 0.35.0 están afectadas por CVE-2026-103663.
+VERSION_MINIMA_OLLAMA="0.35.0"
+
+version_ollama() {
+    curl -sfm 3 "$1/api/version" 2>/dev/null \
+        | sed -nE 's/.*"version"[[:space:]]*:[[:space:]]*"v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' \
+        | head -1
+}
+
+# Devuelve 0 si la versión $1 es igual o posterior a $2.
+version_ge() {
+    local IFS=.
+    local -a a=($1) b=($2)
+    local i
+    for i in 0 1 2; do
+        (( 10#${a[i]} > 10#${b[i]} )) && return 0
+        (( 10#${a[i]} < 10#${b[i]} )) && return 1
+    done
+    return 0
+}
+
+# Si el Ollama del equipo es antiguo se pide actualizarlo y se detiene la
+# instalación: no se cambia a Ollama en Docker, porque el antiguo seguiría
+# funcionando y vulnerable en el equipo.
+exigir_ollama_seguro() {
+    local url="$1" v
+    v="$(version_ollama "$url" || true)"
+    if [[ -z "$v" ]]; then
+        fallar "No se ha podido leer la versión del Ollama de este equipo ($url). Tipo necesita Ollama $VERSION_MINIMA_OLLAMA o posterior: compruébala con 'ollama --version' y, si es anterior, actualízalo desde https://ollama.com/download."
+    fi
+    if ! version_ge "$v" "$VERSION_MINIMA_OLLAMA"; then
+        fallar "El Ollama de este equipo es la versión $v, afectada por un aviso de seguridad (CVE-2026-103663). Tipo necesita Ollama $VERSION_MINIMA_OLLAMA o posterior: actualízalo desde https://ollama.com/download (tus modelos se conservan), reinícialo y vuelve a ejecutar este script."
+    fi
+    ok "Ollama del equipo: versión $v"
+}
+
 # Comprueba los valores de .env que el instalador usa directamente o que
 # deciden qué se ejecuta (imagen base, modelos). Misma regla que
 # tools/windows/validar-env.ps1. Sin .env no hay nada que validar.
@@ -31,6 +69,8 @@ validar_env() {
             PUERTO)
                 if [[ ! "$valor" =~ ^[0-9]{2,5}$ ]] || (( 10#$valor < 1024 || 10#$valor > 65535 )); then
                     avisar "PUERTO no es válido (debe ser un número entre 1024 y 65535)"; errores=1
+                elif (( 10#$valor == 8082 )); then
+                    avisar "PUERTO no puede ser 8082: es el puerto de PlumA. Usa 8769, el de Tipo."; errores=1
                 fi ;;
             PYTHON_IMAGE)
                 if [[ ! "$valor" =~ ^python:3\.12-slim(@sha256:[0-9a-f]{64})?$ ]]; then
@@ -114,10 +154,15 @@ if [[ "$(uname -s)" == "Linux" ]]; then
         ok "Perfil external solicitado (TIPO_PERFIL=external)"
         nota "Tu Ollama debe escuchar en la IP del puente de Docker, por ejemplo"
         nota "OLLAMA_HOST=172.17.0.1:11434. No uses nunca OLLAMA_HOST=0.0.0.0."
+        exigir_ollama_seguro "http://${TIPO_OLLAMA_PUENTE:-172.17.0.1}:11434"
     else
         if [[ "$OLLAMA_LOCAL" == true ]]; then
             ok "Ollama detectado en el equipo, pero en Linux se usará Ollama dentro de Docker"
             nota "Para usar tu Ollama: TIPO_PERFIL=external ./instalar.sh (lee la nota de seguridad del README)."
+            v_local="$(version_ollama http://localhost:11434 || true)"
+            if [[ -n "$v_local" ]] && ! version_ge "$v_local" "$VERSION_MINIMA_OLLAMA"; then
+                avisar "Tu Ollama es la versión $v_local, afectada por CVE-2026-103663: actualízalo aunque Tipo no lo use."
+            fi
         else
             ok "No se ha detectado Ollama en el equipo"
             nota "Se usará Ollama dentro de Docker."
@@ -131,6 +176,7 @@ else
     fi
     if [[ "$PERFIL" == "external" ]]; then
         ok "Ollama detectado en el equipo (puerto 11434)"
+        exigir_ollama_seguro "http://localhost:11434"
         nota "La aplicación usará tu Ollama y los modelos que tengas."
         nota "Recomendado: activa OLLAMA_NO_CLOUD=1 en tu Ollama para que solo use modelos locales."
     else
@@ -143,6 +189,13 @@ fi
 # 4. Puerto configurado (del .env)
 # -----------------------------------------------------------------------------
 paso "Comprobando puerto de la aplicación"
+
+# Tipo usaba el 8082 hasta la 0.2; es el puerto fijo de PlumA. Un .env de
+# entonces se pasa al 8769 para poder usar las dos a la vez.
+if [[ -f .env ]] && grep -qx "PUERTO=8082" .env; then
+    sed -i.bak "s/^PUERTO=8082$/PUERTO=8769/" .env && rm -f .env.bak
+    ok "Puerto cambiado de 8082, el de PlumA, a 8769"
+fi
 
 validar_env
 
@@ -163,8 +216,7 @@ if [[ "$puerto_ocupado" == true ]]; then
     if docker ps --filter "name=tipo-app" --format "{{.Names}}" | grep -q "tipo-app"; then
         ok "Puerto $PUERTO ocupado por la propia aplicación (reinicio)"
     else
-        avisar "Puerto $PUERTO en uso por otra aplicación"
-        nota "Si el arranque falla, cambia PUERTO en .env a otro libre."
+        fallar "El puerto $PUERTO lo está usando otra aplicación (por ejemplo, otra herramienta de la suite). Ciérrala o cambia PUERTO en .env a otro libre (nunca 8082, el de PlumA) y vuelve a ejecutar."
     fi
 else
     ok "Puerto $PUERTO disponible"
@@ -258,7 +310,8 @@ paso "Esperando a que la aplicación esté lista"
 MAX_INTENTOS=30
 listo=false
 for ((i=1; i<=MAX_INTENTOS; i++)); do
-    if curl -sfm 2 "http://localhost:$PUERTO/api/estado" >/dev/null 2>&1; then
+    # Solo cuenta como listo si quien responde es Tipo.
+    if curl -sfm 2 "http://localhost:$PUERTO/api/estado" 2>/dev/null | grep -q '"aplicacion":"Tipo"'; then
         listo=true
         break
     fi

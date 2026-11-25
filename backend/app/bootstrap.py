@@ -81,6 +81,7 @@ estado: dict = {
     "modelo_base": MODELO_BASE,
     "modelo_nombre": MODELO_NOMBRE,
     "crear_modelo_derivado": TIPO_CREAR_MODELO_DERIVADO,
+    "ollama_version": None,
 }
 
 
@@ -111,6 +112,11 @@ async def preparar() -> None:
                 "Use una etiqueta de modelo local sin :cloud."
             )
         await _esperar_ollama()
+        # Antes de cualquier /api/pull: un Ollama anterior a la versión mínima
+        # es vulnerable precisamente en la descarga de modelos.
+        estado.update(fase="comprobando_ollama", mensaje="Comprobando la versión del motor de IA...")
+        estado["ollama_version"] = await llm.verificar_version_ollama()
+        logger.info("Ollama %s cumple la versión mínima", estado["ollama_version"])
         await _asegurar_modelo_base()
         # El modelo base debe ser local según los metadatos de Ollama, no solo
         # por su nombre, antes de derivar de él el modelo de trabajo.

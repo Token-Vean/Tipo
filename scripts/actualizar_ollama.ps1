@@ -5,7 +5,8 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\actualizar_ollama.ps1 0.40.17
 #
 # Comprueba además que la imagen descargada informa de esa misma versión.
-# Rechaza 0.34.2–0.34.x: path traversal en /api/pull (CVE-2026-103663).
+# Rechaza las versiones anteriores a 0.35.0: path traversal en /api/pull
+# (CVE-2026-103663, intervalo ampliado por CERT Polska el 17-11-2026).
 param([Parameter(Mandatory = $true)][string]$Version)
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -13,11 +14,8 @@ Set-Location $Root
 
 if ($Version -notmatch '^(\d+)\.(\d+)\.(\d+)$') { throw "Versión no válida: $Version (p. ej. 0.40.17)" }
 $mayor = [int]$Matches[1]; $menor = [int]$Matches[2]; $parche = [int]$Matches[3]
-if ($mayor -eq 0 -and $menor -eq 34 -and $parche -ge 2) {
-    throw "Ollama $Version está afectado por CVE-2026-103663; use 0.35.0 o posterior."
-}
 if ($mayor -eq 0 -and $menor -lt 35) {
-    Write-Warning "$Version es anterior a 0.35.0. Compruebe sus avisos de seguridad antes de usarla."
+    throw "Ollama $Version está afectado por CVE-2026-103663 (todas las versiones anteriores a 0.35.0)."
 }
 
 $imagen = "ollama/ollama:$Version"
@@ -30,9 +28,9 @@ $informada = (docker run --rm "ollama/ollama@$digest" --version 2>&1 | Out-Strin
 if ($informada -notmatch [regex]::Escape($Version)) { throw "La imagen no informa de la versión ${Version}: $informada" }
 
 $compose = Get-Content "docker-compose.yml" -Raw
-$nuevo = [regex]::Replace($compose, '(?m)^(    image: ollama/ollama@)sha256:[0-9a-f]{64}', "`${1}$digest")
-if ($nuevo -notmatch [regex]::Escape("ollama/ollama@$digest")) {
-    throw "No se encontró la línea image: ollama/ollama@sha256:… en docker-compose.yml"
+$nuevo = [regex]::Replace($compose, '(?m)^(    image: )ollama/ollama[:@]\S+', "`${1}ollama/ollama:$Version@$digest")
+if ($nuevo -notmatch [regex]::Escape("ollama/ollama:$Version@$digest")) {
+    throw "No se encontró la línea image: ollama/ollama… en docker-compose.yml"
 }
 [System.IO.File]::WriteAllText((Join-Path $Root "docker-compose.yml"), $nuevo, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "docker-compose.yml actualizado: ollama/ollama@$digest ($Version)"

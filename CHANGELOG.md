@@ -44,10 +44,27 @@ críticos y altos.
   literales en `docker-compose.yml`, como el resto de controles.
 - **`MODELO_BASE` y `MODELO_NOMBRE`** se validan antes de `/api/pull`: no se
   admiten registros de modelos distintos del de Ollama y de Hugging Face.
-- **Ollama en Docker en modo solo local** (`OLLAMA_NO_CLOUD=1`).
-  `scripts/actualizar_ollama.sh` / `.ps1` fijan el digest de una versión
-  concreta, comprueban la versión que informa la imagen y rechazan 0.34.2–0.34.x
-  (CVE-2026-103663, path traversal en `/api/pull`).
+- **Ollama 0.21.2 → 0.40.17 en el perfil bundled (CVE-2026-103663).** CERT
+  Polska amplió el 17 de noviembre el intervalo afectado de esta
+  vulnerabilidad de path traversal en `/api/pull` a todas las versiones
+  anteriores a 0.35.0, incluida la 0.21.2 que fijaba Tipo. Misma versión que
+  PlumA 0.7.4, con `OLLAMA_NO_CLOUD=1` (modo solo local del propio motor).
+- **Versión mínima de Ollama: 0.35.0** (`VERSION_MINIMA_OLLAMA` en
+  `app/llm.py`), también para el Ollama del equipo:
+  - `instalar.bat` (`tools/windows/comprobar-ollama.ps1`) e `instalar.sh`
+    reutilizan el Ollama del equipo y sus modelos solo si cumple la mínima; si
+    es antiguo o no informa de su versión, piden actualizarlo y se detienen.
+    No cambian a Ollama en Docker, porque el antiguo seguiría vulnerable.
+  - El backend la comprueba al arrancar, antes de descargar ningún modelo, y
+    antes de cada inferencia; falla cerrado.
+  - El panel de Windows muestra la versión del Ollama del equipo y avisa si
+    hay que actualizarlo.
+  - `scripts/actualizar_ollama.sh` / `.ps1` fijan además el digest de una
+    versión y rechazan las anteriores a 0.35.0.
+- **Puerto distinto del de PlumA.** Un `.env` antiguo con `PUERTO=8082` (el
+  puerto de Tipo hasta la 0.2, fijo en PlumA) pasa a `8769`; el 8082 se
+  rechaza. Si el puerto lo ocupa otra aplicación, el instalador se detiene, y
+  solo abre el navegador cuando `/api/estado` confirma que responde Tipo.
 - **Sesiones:** tope absoluto de 7 días (`TIPO_SESSION_MAX_SECONDS`) a la
   renovación deslizante, y un inicio de sesión nuevo revoca el token anterior
   de ese navegador.
@@ -154,9 +171,8 @@ críticos y altos.
   `TIPO_LOTE_RETENCION_DIAS=0` y `TIPO_LOTE_CONSERVAR_ORIGINALES=true`. El
   instalador no los cambia, para no borrar datos sin su consentimiento:
   edítelos a mano si quiere el nuevo comportamiento.
-- Antes de publicar: fijar la versión de Ollama con
-  `scripts/actualizar_ollama.sh <versión>` (el digest actual es de mayo de
-  2026) y anotarla aquí.
+- Si usa el Ollama de su equipo y es anterior a 0.35.0, actualícelo antes de
+  instalar: el instalador y la aplicación no lo aceptan.
 
 ## [0.3.0-beta.2] — 2026-07-15
 

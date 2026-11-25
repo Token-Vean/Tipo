@@ -130,7 +130,19 @@ Se abrirá una ventana desde la que se puede:
 - consultar estado y logs;
 - recuperar el acceso de administrador si se pierde la contraseña.
 
-El instalador comprueba Docker Desktop. Si Docker no está instalado o no está arrancado, muestra instrucciones y detiene la instalación. También comprueba si hay Ollama nativo en `localhost:11434`. Si lo detecta, utiliza ese Ollama; si no lo detecta, usa Ollama dentro de Docker como instalación autocontenida.
+El instalador comprueba Docker Desktop. Si Docker no está instalado o no está arrancado, muestra instrucciones y detiene la instalación.
+
+### Ollama del equipo u Ollama en Docker
+
+- **Si hay un Ollama arrancado en el equipo** (`127.0.0.1:11434`), Tipo lo reutiliza con los modelos que ya tenga, siempre que sea la **versión 0.35.0 o posterior**. Todas las anteriores están afectadas por un aviso de seguridad (CVE-2026-103663, path traversal en la descarga de modelos).
+- **Si ese Ollama es anterior a 0.35.0** o no informa de su versión, el instalador se detiene y pide actualizarlo desde [ollama.com/download](https://ollama.com/download). Los modelos se conservan al actualizar. No se cambia a Ollama en Docker, porque el antiguo seguiría funcionando y vulnerable en el equipo.
+- **Si no hay Ollama en el equipo**, Tipo usa Ollama dentro de Docker (`ollama/ollama:0.40.17`, la misma versión que PlumA, con `OLLAMA_NO_CLOUD=1`) y descarga el modelo la primera vez.
+
+El backend repite la comprobación al arrancar y antes de cada análisis: si alguien sustituye el Ollama por uno antiguo con Tipo en marcha, no se le envía ningún documento.
+
+### Puerto
+
+Tipo se abre en `http://127.0.0.1:8769`. PlumA usa el `8082`, así que se pueden tener las dos abiertas a la vez. Si un `.env` antiguo de Tipo tenía `PUERTO=8082`, el instalador lo cambia a `8769`; no se admite el `8082`. Si el puerto está ocupado por otra aplicación, el instalador se detiene en lugar de arrancar a medias, y solo abre el navegador cuando quien responde es Tipo.
 
 ---
 
@@ -151,12 +163,12 @@ En macOS, Docker Desktop debe estar instalado y en ejecución. Ollama nativo es 
 
 ### Linux y Ollama del equipo (nota de seguridad)
 
-En Linux, el instalador usa siempre **Ollama dentro de Docker**, aunque haya un Ollama instalado en el equipo. Con Docker Engine, el contenedor de Tipo llega al equipo por la IP del puente de Docker (normalmente `172.17.0.1`), mientras que Ollama escucha por defecto solo en `127.0.0.1`.
+En Linux, el instalador usa por defecto **Ollama dentro de Docker**, aunque haya un Ollama instalado en el equipo (si es anterior a 0.35.0, avisa de que conviene actualizarlo). Con Docker Engine, el contenedor de Tipo llega al equipo por la IP del puente de Docker (normalmente `172.17.0.1`), mientras que Ollama escucha por defecto solo en `127.0.0.1`.
 
 Si quiere usar su propio Ollama:
 
 1. Haga que escuche en el puente de Docker, **no en todas las interfaces**: `OLLAMA_HOST=172.17.0.1:11434`.
-2. Instale con `TIPO_PERFIL=external ./instalar.sh`.
+2. Instale con `TIPO_PERFIL=external ./instalar.sh`. El instalador comprueba que ese Ollama es la versión 0.35.0 o posterior (en `http://172.17.0.1:11434`; otra dirección con `TIPO_OLLAMA_PUENTE`).
 
 **No use nunca `OLLAMA_HOST=0.0.0.0`.** Ollama no tiene autenticación: con ese valor, cualquier equipo de la red local puede usarlo, descargar modelos en él o leer lo que procesa.
 
@@ -246,7 +258,7 @@ TIPO_LOTE_ZIP_MAX_DESCOMPRIMIDO=209715200
 TIPO_LOTE_ZIP_MAX_RATIO=100
 ```
 
-La lista desplegable de modelos muestra los modelos ya descargados en Ollama. La imagen Docker de Ollama está fijada por digest en `docker-compose.yml`; para cambiar de versión se usa `scripts/actualizar_ollama.sh <versión>` (o `.ps1`), que comprueba la versión y rechaza las afectadas por CVE-2026-103663. En Windows, el instalador resuelve automáticamente la imagen base `python:3.12-slim` a digest y la guarda en `.env` antes de construir la imagen, sin intervención del usuario final.
+La lista desplegable de modelos muestra los modelos ya descargados en Ollama. La imagen Docker de Ollama está fijada por versión en `docker-compose.yml` (no se lee de `.env`). Para fijarla además por digest se usa `scripts/actualizar_ollama.sh <versión>` (o `.ps1`), que comprueba la versión de la imagen y rechaza las anteriores a 0.35.0. En Windows, el instalador resuelve automáticamente la imagen base `python:3.12-slim` a digest y la guarda en `.env` antes de construir la imagen, sin intervención del usuario final.
 
 ---
 

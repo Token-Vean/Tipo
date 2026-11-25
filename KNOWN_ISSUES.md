@@ -18,7 +18,13 @@
   aislarlo del todo exigiría otro diseño de red.
 - **Contenedor de Ollama.** Corre como root dentro del contenedor (sin
   capacidades y con `no-new-privileges`) y sin sistema de ficheros de solo
-  lectura. Tiene salida a internet porque descarga los modelos.
+  lectura. Tiene salida a internet porque descarga los modelos. La imagen se
+  fija por versión (`ollama/ollama:0.40.17`), no por digest; para anclar
+  también el contenido, `scripts/actualizar_ollama.sh <versión>`.
+- **Ollama del equipo.** Tipo exige la versión 0.35.0 o posterior, pero no
+  controla cómo está configurado: si escucha en todas las interfaces
+  (`OLLAMA_HOST=0.0.0.0`) o tiene activadas las funciones cloud, eso queda
+  fuera de Tipo. El README y el instalador explican cómo dejarlo en local.
 - **Datos en reposo sin cifrar.** Usuarios, lotes y resultados están en el
   volumen Docker `tipo-data` sin cifrado propio; dependen del cifrado del disco
   del equipo.

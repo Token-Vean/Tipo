@@ -34,10 +34,13 @@ services:
 
   # ---------- Ollama en contenedor (perfil "bundled") ----------------------
   ollama:
-    # Digest fijado. Para actualizarlo: scripts/actualizar_ollama.sh <versión>
-    # (o .ps1), que descarga la versión indicada, escribe aquí su digest y
-    # comprueba `ollama --version`. Evitar 0.34.2–0.34.x (CVE-2026-103663).
-    image: ollama/ollama@sha256:7db82c93ff9fae4011a2aa10931b1d2c2a228d508b8736366e3fbaee616b2e8c
+    # Versión fijada en este fichero, sin override desde .env (la misma que
+    # PlumA 0.7.4). 0.21.2, la anterior, está afectada por CVE-2026-103663
+    # (todas las versiones anteriores a 0.35.0). El backend exige además
+    # Ollama >= VERSION_MINIMA_OLLAMA (app/llm.py) al arrancar y antes de cada
+    # inferencia. Para fijarla también por digest:
+    # scripts/actualizar_ollama.sh <versión> (o .ps1).
+    image: ollama/ollama:0.40.17
     container_name: tipo-ollama
     profiles: ["bundled"]
     environment:

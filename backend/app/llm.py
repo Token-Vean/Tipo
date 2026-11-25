@@ -14,6 +14,7 @@ import base64
 import ipaddress
 import logging
 import os
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -85,6 +86,79 @@ def _validar_ollama_url(url: str) -> None:
 
 
 _validar_ollama_url(OLLAMA_URL)
+
+# -----------------------------------------------------------------------------
+# Versión mínima de Ollama
+# -----------------------------------------------------------------------------
+# CVE-2026-103663 (CERT Polska, intervalo ampliado el 17-11-2026): path
+# traversal en /api/pull que permite escribir fuera del almacén de modelos y,
+# en la imagen Docker oficial, ejecutar código como root al reiniciar. Afecta a
+# todas las versiones anteriores a 0.35.0. Tipo reutiliza el Ollama del equipo
+# cuando lo hay (perfil external): un motor vulnerable deja de ser aceptable
+# aunque no sea Tipo quien lo expone. Las versiones antiguas tampoco garantizan
+# los metadatos remote_host/remote_model en los que se apoya la comprobación de
+# modelo local. Mismo valor que VERSION_MINIMA_OLLAMA en PlumA; debe coincidir
+# con tools/windows/Tipo-Control.ps1, instalar.bat e instalar.sh
+# (tests/test_revision_2026_11_unidad.py lo comprueba). Subirlo cuando un aviso
+# nuevo lo requiera.
+VERSION_MINIMA_OLLAMA: tuple[int, int, int] = (0, 35, 0)
+_PATRON_VERSION = re.compile(r"^\s*v?(\d+)\.(\d+)\.(\d+)")
+PERFIL = os.getenv("PERFIL", "bundled").strip().lower()
+
+
+def parsear_version(texto: object) -> tuple[int, int, int] | None:
+    """Convierte «0.40.17», «v0.35.0» o «0.40.17-rc3» en una tupla comparable."""
+    if not isinstance(texto, str):
+        return None
+    coincidencia = _PATRON_VERSION.match(texto)
+    if not coincidencia:
+        return None
+    return tuple(int(parte) for parte in coincidencia.groups())  # type: ignore[return-value]
+
+
+def texto_version(version: tuple[int, ...]) -> str:
+    return ".".join(str(parte) for parte in version)
+
+
+async def verificar_version_ollama() -> str:
+    """Falla cerrado si Ollama no informa de su versión o es anterior a la mínima.
+
+    Se llama al arrancar (bootstrap) y antes de cada inferencia: si el usuario
+    sustituye su Ollama por uno antiguo con Tipo encendido, no se le envía
+    ningún documento. Devuelve la versión como texto.
+    """
+    minima = texto_version(VERSION_MINIMA_OLLAMA)
+    try:
+        async with cliente_local(TIMEOUT_VERIFICACION_MODELO) as cliente:
+            resp = await cliente.get(f"{OLLAMA_URL}/api/version")
+        datos = resp.json() if resp.status_code == 200 else None
+    except (httpx.HTTPError, ValueError):
+        datos = None
+    version = parsear_version(datos.get("version") if isinstance(datos, dict) else None)
+
+    if PERFIL == "external":
+        remedio = (
+            f"Actualice Ollama en este equipo a la versión {minima} o posterior "
+            "(https://ollama.com/download), reinícielo y vuelva a iniciar Tipo."
+        )
+    else:
+        remedio = (
+            "Vuelva a ejecutar el instalador de esta versión de Tipo para actualizar "
+            "el contenedor de Ollama."
+        )
+    if version is None:
+        raise RuntimeError(
+            "No se pudo comprobar la versión de Ollama (/api/version no responde o no "
+            f"devuelve una versión reconocible). Tipo requiere Ollama {minima} o "
+            f"posterior. {remedio}"
+        )
+    if version < VERSION_MINIMA_OLLAMA:
+        raise RuntimeError(
+            f"Ollama {texto_version(version)} está afectado por un aviso de seguridad "
+            f"(CVE-2026-103663). Tipo requiere Ollama {minima} o posterior. {remedio}"
+        )
+    return texto_version(version)
+
 
 def es_modelo_cloud(nombre: str) -> bool:
     """Detecta etiquetas de Ollama que delegan la inferencia en su servicio cloud."""
@@ -182,6 +256,7 @@ async def generar(
     fuerza JSON nativo de Ollama. La temperatura baja privilegia salidas
     reproducibles frente a creatividad.
     """
+    await verificar_version_ollama()
     await verificar_modelo_local(modelo)
 
     payload: dict[str, Any] = {

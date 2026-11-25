@@ -6,7 +6,8 @@
 #   scripts/actualizar_ollama.sh 0.40.17
 #
 # Comprueba además que la imagen descargada informa de esa misma versión.
-# Rechaza 0.34.2–0.34.x: path traversal en /api/pull (CVE-2026-103663).
+# Rechaza las versiones anteriores a 0.35.0: path traversal en /api/pull
+# (CVE-2026-103663, intervalo ampliado por CERT Polska el 17-11-2026).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -16,13 +17,10 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "Uso: $0 <versión>   (p. ej. 0.40.17)" >&2
   exit 2
 fi
-IFS=. read -r mayor menor parche <<<"$version"
-if [[ "$mayor" == "0" && "$menor" == "34" && "$parche" -ge 2 ]]; then
-  echo "Ollama $version está afectado por CVE-2026-103663; use 0.35.0 o posterior." >&2
-  exit 2
-fi
+IFS=. read -r mayor menor _parche <<<"$version"
 if [[ "$mayor" == "0" && "$menor" -lt 35 ]]; then
-  echo "Aviso: $version es anterior a 0.35.0. Compruebe sus avisos de seguridad antes de usarla." >&2
+  echo "Ollama $version está afectado por CVE-2026-103663 (todas las versiones anteriores a 0.35.0)." >&2
+  exit 2
 fi
 
 imagen="ollama/ollama:$version"
@@ -41,10 +39,10 @@ if ! grep -q "$version" <<<"$informada"; then
   exit 1
 fi
 
-sed -i.bak -E "s#^(    image: ollama/ollama@)sha256:[0-9a-f]{64}#\1$digest#" docker-compose.yml
+sed -i.bak -E "s#^(    image: )ollama/ollama[:@][^[:space:]]+#\1ollama/ollama:$version@$digest#" docker-compose.yml
 rm -f docker-compose.yml.bak
-if ! grep -q "ollama/ollama@$digest" docker-compose.yml; then
-  echo "No se encontró la línea image: ollama/ollama@sha256:… en docker-compose.yml" >&2
+if ! grep -q "ollama/ollama:$version@$digest" docker-compose.yml; then
+  echo "No se encontró la línea image: ollama/ollama… en docker-compose.yml" >&2
   exit 1
 fi
 echo "docker-compose.yml actualizado: ollama/ollama@$digest ($version)"
