@@ -1,0 +1,94 @@
+﻿# Tipo 0.3.1-beta.1 — notas de la release para Windows
+
+Tipo es un asistente local de precatalogación de monografías impresas
+modernas: a partir del PDF o de fotos de la portada, la página de créditos y
+el colofón propone los datos del registro (ISBD, MARC21, Dublin Core), cada
+uno con su evidencia literal y su confianza. Las propuestas son borradores
+que el profesional debe revisar.
+
+La 0.3.1-beta.1 es una versión de seguridad, privacidad y rendimiento. Se
+recomienda en todas las instalaciones: la 0.3.0-beta.2 lleva versiones de
+Pillow y pypdf con avisos de seguridad críticos y altos, y un motor de IA
+afectado por un aviso de seguridad.
+
+## Seguridad
+
+- **Motor de IA actualizado (Ollama 0.40.17).** Las versiones de Ollama
+  anteriores a la 0.35.0 tienen un fallo (CVE-2026-103663) que permite, al
+  descargar un modelo manipulado, escribir ficheros fuera de la carpeta de
+  modelos. Tipo no se instala ni procesa documentos con un Ollama afectado:
+  si usas el Ollama de tu equipo y es antiguo, te pide actualizarlo.
+- **Ollama en modo local.** El Ollama que Tipo arranca dentro de Docker tiene
+  desactivados los modelos en la nube. Tipo rechaza además los modelos que
+  se ejecutan en un servidor externo, aunque se hayan renombrado.
+- **Pillow 13.0.0 y pypdf 6.21.4.** Corrigen fallos graves al leer imágenes y
+  PDF manipulados.
+- **Apagar Tipo desde la interfaz exige ser administrador.**
+- **Restablecer la contraseña del administrador** desde el panel
+  («Gestionar acceso») vuelve a funcionar.
+- El texto de los documentos ya no puede imitar las marcas internas que
+  separan las instrucciones del modelo y el documento.
+
+## Privacidad
+
+- Los lotes terminados se borran a los 30 días y los documentos originales,
+  en cuanto se procesa cada libro. La interfaz muestra el plazo en cada lote.
+- El modo incógnito ya no guarda ni muestra los nombres de los ficheros ni
+  sus huellas.
+- El registro de eventos de seguridad se borra a los 90 días.
+
+## Rendimiento
+
+Pensado para equipos modestos: menos memoria y menos espera por documento.
+
+- Del PDF solo se lee el texto de las páginas que se analizan (las 12
+  primeras y las 6 últimas), no el libro entero.
+- La memoria del modelo se ajusta al tamaño de cada documento. Si un
+  documento no cabe, Tipo envía su principio y su final y lo indica en las
+  advertencias, en lugar de que el modelo pierda en silencio sus
+  instrucciones.
+- El modelo responde con una estructura fija: casi desaparecen las
+  respuestas inválidas que obligaban a repetir el análisis.
+- Las fotos se envían al modelo más ligeras y en su orientación correcta
+  (las del móvil podían llegar giradas).
+
+## Cambios visibles
+
+- **Nuevo puerto: <http://localhost:8769>.** PlumA usa el 8082, así que se
+  pueden tener las dos abiertas a la vez.
+- Nuevo paquete: se abre con «Tipo - Instalar y abrir» y la ayuda está en la
+  carpeta `ayuda`.
+
+## Instalación
+
+1. Instala y abre Docker Desktop.
+2. Antes de descomprimir el ZIP: botón derecho > Propiedades > marca
+   «Desbloquear» > Aceptar. Así Windows no mostrará avisos al abrir Tipo.
+3. Descomprime el ZIP en un lugar fijo (por ejemplo, Documentos).
+4. Abre `Tipo - Instalar y abrir` y pulsa «Comprobar requisitos» e
+   «Instalar / iniciar».
+5. En el navegador, crea el usuario administrador.
+
+Si ya tenías instalada una versión anterior desde un ZIP: detén Tipo desde su
+panel antes de instalar esta. La nueva empieza con datos vacíos (hay que
+crear de nuevo el usuario administrador); los datos antiguos siguen en
+Docker, en volúmenes cuyo nombre empieza por `_tipo_`, y se pueden borrar
+desde Docker Desktop, en «Volumes», cuando ya no los necesites. Los modelos
+de tu Ollama se conservan.
+
+Si ya tienes Ollama en el equipo, debe ser la 0.35.0 o posterior. Si no
+tienes Ollama, la primera instalación descarga el modelo (unos 3-5 GB).
+
+## Limitaciones conocidas
+
+- Beta orientada a monografía moderna impresa. La validación de los
+  registros es estructural; no se ha probado su importación en todos los
+  sistemas de gestión bibliotecaria.
+- El ZIP no está firmado digitalmente; comprueba su SHA-256 con el fichero
+  `.sha256` publicado junto a él. El ZIP se genera con
+  `scripts/empaquetar_windows.py` a partir del código versionado, y el mismo
+  script comprueba que un ZIP coincide fichero a fichero con la etiqueta
+  publicada en GitHub.
+- La construcción de la imagen de la aplicación no es reproducible bit a bit.
+- Si tu organización bloquea PowerShell por directiva, el panel no funcionará.
+- Más detalles en `programa/KNOWN_ISSUES.md`.

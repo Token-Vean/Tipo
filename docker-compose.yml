@@ -30,6 +30,13 @@
 # comprueba.
 # =============================================================================
 
+# Nombre de proyecto fijo. Sin él, Docker Compose usa el nombre de la carpeta:
+# en el paquete de Windows es «programa», el mismo que en el de PlumA, y las dos
+# aplicaciones compartirían proyecto (un «down» de una detendría o borraría
+# contenedores y volúmenes de la otra). También hace que los datos sigan en el
+# mismo volumen (tipo_tipo-data) aunque se cambie la carpeta de sitio.
+name: tipo
+
 services:
 
   # ---------- Ollama en contenedor (perfil "bundled") ----------------------

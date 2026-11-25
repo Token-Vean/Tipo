@@ -114,13 +114,16 @@ El profesional debe revisar, corregir, completar y validar los resultados antes 
 
 ## Instalación rápida en Windows
 
-Para usuarios no técnicos, descargue y descomprima el `.zip` de la release. Después ejecute:
+Para usuarios no técnicos:
 
-```text
-Instalar Tipo.bat
-```
+1. Instale Docker Desktop y ábralo.
+2. Descargue `Tipo-…-windows.zip` de [Releases](https://github.com/Token-Vean/Tipo/releases). Antes de descomprimirlo: botón derecho > Propiedades > marque «Desbloquear» > Aceptar.
+3. Descomprímalo en un lugar fijo (por ejemplo, Documentos) y abra **«Tipo - Instalar y abrir»**.
+4. Pulse «Comprobar requisitos» e «Instalar / iniciar». Al terminar se abre el navegador para crear el usuario administrador.
 
-Se abrirá una ventana desde la que se puede:
+El paquete contiene solo el lanzador, la carpeta `ayuda` (instrucciones, notas de la versión y «Abrir sin VBScript» para equipos con VBScript desactivado) y la carpeta `programa`. Compruebe el ZIP con el `.sha256` publicado junto a él. Desde una copia del repositorio, el mismo panel se abre con `Tipo-Control.bat`.
+
+El panel permite:
 
 - instalar o actualizar Tipo;
 - iniciar la aplicación;

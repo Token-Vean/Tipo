@@ -4,26 +4,21 @@ Tipo es un asistente local de precatalogación para monografías impresas.
 
 ## Windows
 
-Ejecuta:
+Descarga de [Releases](https://github.com/Token-Vean/Tipo/releases) el ZIP
+`Tipo-…-windows.zip`, desbloquéalo (botón derecho > Propiedades >
+«Desbloquear»), descomprímelo y abre **«Tipo - Instalar y abrir»**. La ayuda
+está en la carpeta `ayuda` del paquete.
 
-```bat
-1_INSTALAR_WINDOWS.bat
-```
+Desde una copia del repositorio: `Tipo-Control.bat` (panel) o `instalar.bat`.
 
 ## Linux/macOS
 
-Ejecuta:
-
 ```bash
-chmod +x 1_instalar_linux_mac.sh
-./1_instalar_linux_mac.sh
+chmod +x instalar.sh detener.sh desinstalar.sh
+./instalar.sh
 ```
 
-La aplicación se abrirá en:
-
-```text
-http://localhost:8082
-```
+La aplicación se abre en <http://localhost:8769> (PlumA usa el 8082).
 
 ## Límites importantes
 

@@ -3,7 +3,7 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Tipo sigue [versionado semántico](https://semver.org/lang/es/) en su variante beta.
 
-## [0.3.1-beta.1] — pendiente de publicación
+## [0.3.1-beta.1] — 2026-11-25
 
 Release de **seguridad y privacidad** preparada para el curso de SEDIC.
 Recoge todo lo hecho en `main` desde julio (que nunca llegó a publicarse) y
@@ -131,6 +131,33 @@ documento, sin cambiar lo que se propone.
   borrar o cambiar la contraseña de un usuario desde Tipo invalida la caché
   al momento, y el plazo solo acota los cambios hechos con `tipo-auth`.
 
+### Paquete para Windows
+
+- **Paquete nuevo, como el de PlumA.** El ZIP trae en la raíz un único
+  fichero que abrir, «Tipo - Instalar y abrir» (VBScript que abre el panel
+  sin consola), la carpeta `ayuda` (`LEEME.txt`, notas de la versión y
+  «Abrir sin VBScript» para equipos en los que Microsoft ya lo ha
+  desactivado) y la carpeta `programa`. Sustituye a «Instalar Tipo.bat» con
+  la carpeta oculta `_tipo`.
+- **El paquete se genera desde el repositorio** con
+  `scripts/empaquetar_windows.py`, en cualquier sistema: lee los objetos de
+  Git de una referencia (nunca el directorio de trabajo), excluye lo que
+  solo sirve para desarrollo, convierte a CRLF los `.bat`, `.ps1` y `.vbs`,
+  exige UTF-8 con BOM en los `.ps1` del panel y se detiene si encuentra
+  versionado algo que no debe distribuirse (`.env`, claves, bases de datos,
+  documentos en `ejemplos/`). El ZIP es reproducible (mismo commit, mismo
+  ZIP) y se acompaña de su `.sha256`; con `--verificar` se comprueba que un
+  ZIP publicado coincide fichero a fichero con su etiqueta. Sustituye a
+  `scripts/crear_release_windows.ps1`.
+- **Nombre de proyecto fijo en Docker Compose (`name: tipo`).** Sin él, el
+  proyecto tomaba el nombre de la carpeta: en el paquete nuevo sería
+  `programa`, el mismo que en el de PlumA, y un `docker compose down
+  --remove-orphans` de una aplicación (lo hace el instalador) habría borrado
+  los contenedores de la otra.
+- `LEEME_PRIMERO.md` e `INSTALACION.md` describen el paquete y el puerto
+  8769; se retira `LEEME_PRIMERO.txt`, duplicado y desactualizado (citaba
+  instaladores que ya no existían y el puerto 8082).
+
 ### Corregido
 
 - Las subidas de lotes se escribían en `/tmp`, un tmpfs de 512 MB en RAM que
@@ -199,8 +226,7 @@ documento, sin cambiar lo que se propone.
 
 - Versión unificada en 0.3.1-beta.1 en `VERSION`, `app/version.py`,
   `pyproject.toml` (antes desalineados entre 0.2.0-beta.7, 0.3.0-beta.1 y
-  0.3.0b2), el instalador, el panel de Windows, `.env.example` y
-  `scripts/crear_release_windows.ps1`.
+  0.3.0b2), el instalador, el panel de Windows y `.env.example`.
 - Se retira `README_Tipo_actualizado_v0.3.0-beta.1.md`, una copia antigua del
   README que aún describía los controles de seguridad como variables de `.env`.
 
@@ -213,6 +239,16 @@ documento, sin cambiar lo que se propone.
   `TIPO_LOTE_RETENCION_DIAS=0` y `TIPO_LOTE_CONSERVAR_ORIGINALES=true`. El
   instalador no los cambia, para no borrar datos sin su consentimiento:
   edítelos a mano si quiere el nuevo comportamiento.
+- **Datos de una instalación anterior.** Con el nombre de proyecto fijo
+  (`tipo`), los volúmenes pasan a llamarse `tipo_tipo-data` y
+  `tipo_ollama-models`. Si la instalación anterior estaba en una carpeta
+  llamada `Tipo` o `tipo`, nada cambia. Si venía del ZIP anterior (carpeta
+  `_tipo`) o de otra carpeta, Tipo empieza con datos vacíos y hay que crear
+  de nuevo el administrador; los datos antiguos siguen en Docker, en los
+  volúmenes con el prefijo de la carpeta anterior (`_tipo_…`), hasta que se
+  borren desde Docker Desktop. Detenga la versión anterior antes de instalar
+  la nueva: los contenedores conservan sus nombres (`tipo-app`,
+  `tipo-ollama`).
 - Si usa el Ollama de su equipo y es anterior a 0.35.0, actualícelo antes de
   instalar: el instalador y la aplicación no lo aceptan.
 
